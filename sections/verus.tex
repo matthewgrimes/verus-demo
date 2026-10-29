@@ -39,7 +39,7 @@ Mode & Purpose & Example \\\midrule
 
 \begin{frame}[fragile]{Implementing max in Rust}
 \begin{lstlisting}
-fn max(x: i64, limit: i64) -> i64
+fn max(x: i64, y: i64) -> i64
 {
     if x>y {x} else {y}
 }
@@ -47,7 +47,8 @@ fn max(x: i64, limit: i64) -> i64
 \end{frame}
 \begin{frame}[fragile]{Decorating our implementation with Verus}
 \begin{lstlisting}
-fn max(x: i64, limit: i64) -> (m: i64)
+fn max(x: i64, y: i64) -> (m: i64)
+    requires
     ensures
         m>=x,
         m>=y,
@@ -59,7 +60,6 @@ fn max(x: i64, limit: i64) -> (m: i64)
 \begin{itemize}
 \item \texttt{requires}: what callers must establish.
 \item \texttt{ensures}: what callers may rely on afterward.
-\item Verus also checks the executable addition for overflow.
 \end{itemize}
 \source{https://verus-lang.github.io/verus/guide/requires_ensures.html}{Verus Guide: contracts}
 \note{The complete file adds use vstd::prelude::* and a verus! block. In specification expressions, the addition is mathematical. In the executable branch, x < limit and the u32 bound on limit justify x + 1. This is intended to be an automatically discharged example.}

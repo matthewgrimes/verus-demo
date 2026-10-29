@@ -1,12 +1,12 @@
 \section{Z3}
 \begin{frame}{Z3: satisfiability relative to a theory}
     In the last section, we asked whether or not
-\begin{align*}
-\exists x,y,m\in\mathbb{Z}: 
-&\left[(x>y)\land (m=x))\lor(\lnot(x>y)\land (m=y)\right]\\
-&\land \lnot\left[ (m=x \lor m=y) \land m\geq x\land m\geq y\right]
-\end{align*}
-is true.
+    $\exists x,y,m\in\mathbb{Z}$ such that
+\[
+\underbrace{\left[((x>y)\land (m=x))\lor(\lnot(x>y)\land (m=y))\right] }_{m\text{ given by max}(x,y)}
+\land \lnot\underbrace{\left[ (m=x \lor m=y) \land m\geq x\land m\geq y\right]}_{m\text{ satisfies definition of max}}
+\]
+
 \par
 This is exactly the type of statement the SMT/SAT solver Z3 is designed to answer.
 \end{frame}
@@ -27,13 +27,13 @@ This is exactly the type of statement the SMT/SAT solver Z3 is designed to answe
 \end{frame}
 
 \begin{frame}{Prove a property by searching for its violation}
-\[\neg\exists s,s':\ P(s)\land C(s,s')\land\neg Q(s').\]
+\[\exists s,s':\ P(s)\land C(s,s')\land\neg Q(s').\]
 Ask whether the existential counterexample formula is satisfiable.
 \begin{center}
 \begin{tikzpicture}[node distance=8mm, every node/.style={font=\small},box/.style={draw=Teal,rounded corners,align=center,minimum height=12mm,text width=33mm}]
 \node[box] (p) {Permitted input};
 \node[box,right=of p] (c) {Computed result};
-\node[box,right=of c] (q) {Broken promise};
+\node[box,right=of c] (q) {Broken contract};
 \draw[-{Stealth},thick,Teal] (p)--(c);
 \draw[-{Stealth},thick,Teal] (c)--(q);
 \end{tikzpicture}

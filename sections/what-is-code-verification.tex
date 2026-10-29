@@ -12,13 +12,13 @@
 \end{frame}
 
 \begin{frame}{Taking the max of two integers}
-    We can state the logical claim as 
+    We can state the logical claim that the implementation is correct as 
     $$\forall x,y,m\in\mathbb{Z},\, m=\text{max}(x,y)\implies (m=x \lor m=y) \land m\geq x\land m\geq y$$
     In general, $a\implies b$ is equivalent to $\lnot a \lor b$.
     \medskip
     We can thus rewrite
     $$\forall x,y,m\in\mathbb{Z},\, \lnot(m=\text{max}(x,y))\lor\left( (m=x \lor m=y) \land m\geq x\land m\geq y\right)$$
-    Equivalently, the implementation of max has a bug if
+    Equivalently, the implementation of max has a bug if and only if
     $$\exists x,y,m\in\mathbb{Z},\, (m=\text{max}(x,y))\land \lnot\left( (m=x \lor m=y) \land m\geq x\land m\geq y\right)$$
 \end{frame}
 
@@ -39,7 +39,7 @@ program $C$ can terminate in $s'$ when started in $s$.
     In our example we have
     \begin{itemize}
         \item $P$: $x$ and $y$ are integers
-        \item $C$: the implementation of max
+        \item $C$: $m$ is given by the implementation of max
         \item $Q$: $m\geq x\land m\geq y\land (m=y\lor m=x)$
     \end{itemize}
 \end{block}
@@ -60,7 +60,7 @@ fn max(x: int, y: int) -> (m: int)
 
 }
 \end{lstlisting}
-Logically, this implementation says
+Logically, this implementation can be expressed by
 \[
 m=\text{max}(x,y):= ((x>y)\land (m=x))\lor(\lnot(x>y)\land (m=y))
 \]
@@ -68,11 +68,10 @@ m=\text{max}(x,y):= ((x>y)\land (m=x))\lor(\lnot(x>y)\land (m=y))
 
 \begin{frame}{Putting it all together}
     We can combine everything on the prior slides into the following statement: our implementation of max is \emph{incorrect}
-    if and only if
-\begin{align*}
-\exists x,y,m\in\mathbb{Z}: 
-&\left[(x>y)\land (m=x))\lor(\lnot(x>y)\land (m=y)\right]\\
-&\land \lnot\left[ (m=x \lor m=y) \land m\geq x\land m\geq y\right]
-\end{align*}
+    if and only if $\exists x,y,m\in\mathbb{Z}$ such that
+\[
+\underbrace{\left[((x>y)\land (m=x))\lor(\lnot(x>y)\land (m=y))\right] }_{m\text{ given by max}(x,y)}
+\land \lnot\underbrace{\left[ (m=x \lor m=y) \land m\geq x\land m\geq y\right]}_{m\text{ satisfies definition of max}}
+\]
 We can see by inspection that the claim is false, there is no counter-example, and the implementation is proven correct.
 \end{frame}
