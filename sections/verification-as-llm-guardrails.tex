@@ -17,22 +17,39 @@
 \note{This is a proposed engineering workflow, not a claim that Verus guarantees all LLM output is safe. LLMs can help draft implementations, invariants, and lemmas; the generated proof text itself is not evidence until checked.}
 \end{frame}
 
-\begin{frame}{A concrete revision loop}
+\begin{frame}{A concrete task: count equal pairs}
+Given a list $s$, count pairs of positions carrying the same value:
+\[
+ E(s)=\bigl|\{(i,j):0\le i<j<|s|,\ s_i=s_j\}\bigr|.
+\]
+For $s=[4,4,4,9,9]$, there are $\binom{3}{2}+\binom{2}{2}=4$ pairs.
+\begin{block}{The recursive specification in \texttt{equal\_pairs.rs}}
+\[
+ E([])=0,\qquad E(p\mathbin{+\!+}[v])=E(p)+|\{i:p_i=v\}|.
+\]
+Appending $v$ creates one pair with each earlier occurrence of $v$.
+\end{block}
+\note{This counts unordered pairs of distinct positions, each once. It does not count only distinct repeated values or disjoint pairs: three occurrences produce three pairs. The original request was to implement this specification as fast as possible while leaving its definition and the function contract unchanged. The file's filter expression counts matching elements in the prefix.}
+\end{frame}
+
+\begin{frame}{A concrete revision loop: \texttt{equal\_pairs.rs}}
 \begin{enumerate}
-\item Freeze the counter contract and allowed input domain.
-\item Ask the LLM to implement the function and discharge obligations.
-\item Reject the \texttt{<=} candidate when verification fails.
-\item Revise the body to use \texttt{<}; check the same contract again.
-\item Inspect the changed argument and test the surrounding program.
+\item \textbf{Check the statement:} a length bound alone does not ensure the pair count fits in \texttt{u64}.
+\item \textbf{Human correction:} require $E(s)\le 2^{64}-1$; then fix the contract.
+\item \textbf{Generate efficient code:} maintain frequencies; a value seen $c$ times contributes $c$ new pairs.
+\item \textbf{Revise the proof:} add prefix lemmas and invariants; rerun Verus until all obligations pass.
 \end{enumerate}
-\begin{block}{Helpful prompt constraint}``Keep the contract unchanged. Do not introduce assumptions or bypass verification. Explain any remaining obligations.''\end{block}
-\note{A prompt constraint helps communicate intent but is not enforcement. Repository permissions, review, and CI must enforce the acceptance policy independently. Do not let an agent edit the verifier command to make a failed run appear successful.}
+\begin{block}{Result}
+Expected $O(n)$ time; $O(k)$ space for $k$ distinct values.\par
+Verus: 6 verified, 0 errors; the corrected contract and original spec are unchanged.
+\end{block}
+\note{This is the actual interaction behind examples/equal\_pairs.rs. An all-equal input has n(n-1)/2 pairs, so the original length precondition was insufficient for a u64 result. The human explicitly corrected the precondition; the model did not silently weaken the theorem to obtain a pass. The implementation uses HashMap::entry to add the old frequency and increment it. Its invariants relate the accumulator to E of the processed prefix and the map to prefix frequencies. Proof revisions included identifying equal filter predicates and selecting quantifier triggers. Prefix monotonicity proves partial sums cannot overflow. Complexity is an algorithmic analysis, not a property proved by this contract; hash-table costs are expected amortized.}
 \end{frame}
 
 \begin{frame}{Do not let a proof attempt change the theorem}
 \begin{itemize}
-\item \textbf{Weaken the conclusion:} replace $r=\min(x+1,L)$ by $r\le L$.
-\item \textbf{Strengthen the hypotheses:} exclude the failing boundary case.
+\item \textbf{Weaken the conclusion:} drop $m\in\{x,y\}$, permitting any upper bound.
+\item \textbf{Strengthen the hypotheses:} require $x=y$, hiding a minimum/maximum mix-up.
 \item \textbf{Assume the claim:} introduce an unproved premise that implies it.
 \end{itemize}
 \begin{block}{The guardrail must preserve the statement}
@@ -46,9 +63,9 @@ Fix the contract, audit new assumptions, and require all intended obligations to
 \column{.48\textwidth}
 \begin{block}{Can establish, when specified}
 \begin{itemize}
-\item Results satisfy a contract.
-\item Arithmetic stays in range.
-\item A modeled invariant is preserved.
+\item The result is an attained maximum.
+\item Slice accesses stay in bounds.
+\item The prefix invariant is preserved.
 \end{itemize}
 \end{block}
 \column{.48\textwidth}
@@ -85,7 +102,7 @@ Fix the contract, audit new assumptions, and require all intended obligations to
 \item \href{https://microsoft.github.io/z3guide/}{Microsoft's Z3 Guide}\par\scriptsize\url{https://microsoft.github.io/z3guide/}\small
 \end{itemize}
 \medskip
-Local examples: \texttt{examples/counter.rs},\par
-\texttt{examples/counter-bug.smt2}, \texttt{examples/counter-fixed.smt2}.
+Local examples: \texttt{examples/max.rs}, \texttt{examples/max\_iter.rs},\par
+\texttt{examples/max.smt2}, \texttt{examples/equal\_pairs.rs}.
 \note{The README documents build commands and validation status. Source links throughout the deck are clickable. Speaker notes live in the TeX source and are hidden in the audience PDF.}
 \end{frame}

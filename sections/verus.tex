@@ -23,7 +23,7 @@
 \begin{tabular}{p{.17\textwidth}p{.38\textwidth}p{.32\textwidth}}
 \toprule
 Mode & Purpose & Example \\\midrule
-\texttt{exec} & Actual computation & Update a counter \\\addlinespace
+\texttt{exec} & Actual computation & Compute a maximum \\\addlinespace
 \texttt{spec} & Mathematical definitions & Describe the desired result \\\addlinespace
 \texttt{proof} & Establish logical facts & Supply a lemma or assertion \\\bottomrule
 \end{tabular}
@@ -62,76 +62,75 @@ fn max(x: i64, y: i64) -> (m: i64)
 \item \texttt{ensures}: what callers may rely on afterward.
 \end{itemize}
 \source{https://verus-lang.github.io/verus/guide/requires_ensures.html}{Verus Guide: contracts}
-\note{The complete file adds use vstd::prelude::* and a verus! block. In specification expressions, the addition is mathematical. In the executable branch, x < limit and the u32 bound on limit justify x + 1. This is intended to be an automatically discharged example.}
+\note{The complete file is examples/max.rs. There are no preconditions on the two i64 inputs. The executable function only compares and selects, so there is no arithmetic-overflow obligation for its body. The three postconditions characterize the maximum.}
 \end{frame}
 
 \begin{frame}{What must be established?}
 \begin{enumerate}
-\item \textbf{Safe addition:} $x<\mathit{limit}\le\texttt{u32::MAX}$ gives room to increment.
-\item \textbf{Bounded result:} each branch returns at most the limit.
-\item \textbf{Exact behavior:} increment below the limit, stay put at the limit.
+\item \textbf{Upper bound:} the result $m$ satisfies $m\ge x$ and $m\ge y$.
+\item \textbf{Attainment:} $m=x$ or $m=y$; the result is one of the inputs.
+\item \textbf{Both branches:} if $x>y$, return $x$; otherwise $y\ge x$, so return $y$.
 \end{enumerate}
-\begin{block}{Try the original bug}Replace \texttt{x < limit} with \texttt{x <= limit} in the body.\par The same contract should reject the implementation.\end{block}
-\note{Keep the specification unchanged during this mutation. At equality the body disagrees with the exact postcondition and breaks the bound; at MAX the body can overflow as well. This is a useful demonstration even when not running live.}
+\begin{block}{A mutation the contract rejects}
+Swap the returned values: \texttt{if x > y \{ y \} else \{ x \}}.\par
+For $x=5$, $y=3$, the result $3$ fails $m\ge x$.
+\end{block}
+\note{No addition occurs in this implementation. The proof is a case split in a total order. At equality either input is a valid maximum, so changing > to >= is not a bug; swapping the returned branches is. The attainment clause matters: an arbitrary upper bound need not be the maximum.}
 \end{frame}
 
 \begin{frame}{Using a verified function is applying a lemma}
-Suppose we have established
+Let $M(a,b)$ denote the verified function. Its contract gives
 \[
- \forall x,L\in\{0,\ldots,2^{32}-1\},\quad
- x\le L\ \Longrightarrow\ \operatorname{advance}(x,L)=\min(x+1,L).
+ M(a,b)\ge a,\qquad M(a,b)\ge b,\qquad M(a,b)\in\{a,b\}.
 \]
+To find the maximum of three inputs, compute $t=M(a,b)$, then $m=M(t,c)$.
 \begin{itemize}
-\item Instantiate at $(x,L)=(4,5)$ to deduce the result is $5$.
-\item Instantiate at $(x,L)=(5,5)$ to deduce the result is again $5$.
-\item At $(x,L)=(6,5)$, the hypothesis fails; the theorem gives no guarantee.
+\item $m\ge t\ge a,b$ and $m\ge c$: $m$ is an upper bound.
+\item $m\in\{t,c\}$ and $t\in\{a,b\}$: $m\in\{a,b,c\}$.
 \end{itemize}
 \begin{block}{Modular proof}
-Subsequent arguments use the function's contract as a lemma.\par
-They need not repeat the proof about its implementation.
+The two contracts establish $m=\max\{a,b,c\}$.\par
+We need not inspect either function call's implementation.
 \end{block}
-\note{The displayed functional equation is justified for this terminating function. General Hoare contracts need the partial-correctness qualification discussed earlier. The corresponding client assertions are retained in examples/counter.rs.}
+\note{All inputs are representable machine integers; comparison and selection stay in the same type. This is ordinary lemma application followed by transitivity. Repeating this argument suggests the maximum-over-a-slice algorithm on the next slides.}
 \end{frame}
 
 
 \begin{frame}{A loop invariant is an induction hypothesis}
-For \texttt{while} $B$ \texttt{do} $C$, choose a predicate $I$ on states.
+For a nonempty slice $a=(a_0,\ldots,a_{n-1})$, after processing $i$ elements:
 \[
- \underbrace{P\Rightarrow I}_{\text{base case}},\qquad
- \underbrace{\{I\land B\}\ C\ \{I\}}_{\text{inductive step}},\qquad
- \underbrace{I\land\neg B\Rightarrow Q}_{\text{conclusion at exit}}.
+ I(i,b)\equiv 1\le i\le n\ \land\
+ (\forall k<i,\ a_k\le b)\ \land\
+ (\exists j<i,\ a_j=b).
 \]
-For repeated bounded successor, take $I(x)\equiv 0\le x\le L$.
+Here $j,k$ range over nonnegative integers: $b$ is the maximum of the prefix.
 \begin{itemize}
-\item Initially: $0\le x_0\le L$ is assumed.
-\item If $x<L$, then $x'=x+1\le L$; the invariant is preserved.
-\item At exit: $x\le L$ and $\neg(x<L)$ imply $x=L$.
+\item \textbf{Base case:} $i=1$, $b=a_0$.
+\item \textbf{Inductive step:} replace $b$ by $\max(b,a_i)$, then increment $i$.
+\item \textbf{At exit:} $i=n$, so the prefix is the whole slice.
 \end{itemize}
 \begin{block}{Termination uses well-foundedness}
-$V(x)=L-x\in\mathbb{N}$ decreases strictly on every iteration.
+$V(i)=n-i\in\mathbb{N}$ decreases strictly on every iteration.
 \end{block}
-\note{Induct on the number of completed iterations. The invariant includes the state where the guard is false, so x < L would be too strong. Nonnegativity is implicit for u32 in the upcoming code. A strictly descending sequence in the naturals cannot be infinite; this is the separate termination argument.}
+\note{The universal clause is an upper bound; the existential clause gives a witness attaining it. Together they specify the maximum rather than just an upper bound. The index bounds justify reading $a_i$ while the guard holds. Initialization reads $a_0$, which is why the input must be nonempty.}
 \end{frame}
 
-\begin{frame}[fragile]{Loops need an invariant}
-\begin{lstlisting}[basicstyle=\ttfamily\footnotesize]
-fn fill_to_limit(start: u32, limit: u32) -> (r: u32)
-    requires start <= limit,
-    ensures r == limit,
-{
-    let mut x = start;
-    while x < limit
-        invariant x <= limit,
-        decreases limit - x,
-    {
-        x = advance(x, limit);
-    }
-    x
-}
-\end{lstlisting}
-\small Invariant: we stay within the limit. Variant: the remaining distance shrinks.
+\begin{frame}[fragile]{Maximum over a nonempty \texttt{u64} slice}
+\lstinputlisting[firstline=5,lastline=9]{examples/max_iter.rs}
+\begin{itemize}
+\item \texttt{\&[u64]}: a borrowed sequence of integers in $\{0,\ldots,2^{64}-1\}$.
+\item Nonempty input: a maximum must be attained by some element.
+\item First postcondition: $m$ bounds every element from above.
+\item Second postcondition: an element actually equals $m$.
+\end{itemize}
+\note{The binary example used i64. For this loop example we use u64 as requested; the same order argument works for both. A slice is a sequence viewed without copying it. The mathematical int indices in the quantifiers are ghost expressions, not runtime iteration.}
+\end{frame}
+
+\begin{frame}[fragile]{The induction hypothesis in Verus}
+\lstinputlisting[firstline=10,lastline=26,basicstyle=\ttfamily\fontsize{8}{9}\selectfont]{examples/max_iter.rs}
+\small A single pass: $O(n)$ time and $O(1)$ additional space.
 \source{https://verus-lang.github.io/verus/guide/while.html}{Verus Guide: Loops and invariants}
-\note{Deliberately simple, not a recommended implementation of assignment. Establish the invariant initially, preserve it after each step, then combine it with the negated guard to get equality. The variant is nonnegative and strictly decreases while the guard holds.}
+\note{This is the body of max from the preceding slide, read directly from examples/max\_iter.rs. best represents b and values represents a. The loop starts at 1 because values[0] has already been processed. While i < len, the next access is in bounds and i + 1 cannot overflow usize. There is no arithmetic on the u64 elements. Verus checks the upper-bound and witness invariants, the postconditions, and the decreasing distance to the end.}
 \end{frame}
 
 \begin{frame}{What is being trusted?}
