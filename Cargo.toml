@@ -1,0 +1,11 @@
+[package]
+name = "verus-presentation-examples"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Cargo discovers each examples/*.rs file as a separate executable crate.
+# This dependency enables ordinary Cargo builds and editor macro expansion;
+# verification itself uses the vstd bundled with the Verus executable.
+[dependencies]
+vstd = "=0.0.0-2026-09-20-0158"
