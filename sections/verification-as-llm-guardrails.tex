@@ -1,0 +1,91 @@
+\section{Verification as LLM Guardrails}
+\begin{frame}{An LLM proposes a construction; verification checks it}
+\begin{center}
+\begin{tikzpicture}[node distance=5mm,box/.style={draw=Teal,rounded corners,align=center,minimum height=17mm,text width=26mm,font=\small}]
+\node[box] (s) {Human-reviewed\\contract};
+\node[box,right=of s] (l) {LLM proposes\\code + proof};
+\node[box,right=of l] (v) {Verus checks\\obligations};
+\node[box,right=of v] (r) {Review\\and tests};
+\draw[-{Stealth},thick,Teal] (s)--(l);
+\draw[-{Stealth},thick,Teal] (l)--(v);
+\draw[-{Stealth},thick,Teal] (v)--(r);
+\draw[-{Stealth},thick,Rust] (v.south) -- ++(0,-.6) -| node[pos=.25,below,font=\scriptsize]{diagnostics / revision} (l.south);
+\end{tikzpicture}
+\end{center}
+\vspace{6mm}
+\large Plausibility is not a proof: check the generated construction against a fixed claim.
+\note{This is a proposed engineering workflow, not a claim that Verus guarantees all LLM output is safe. LLMs can help draft implementations, invariants, and lemmas; the generated proof text itself is not evidence until checked.}
+\end{frame}
+
+\begin{frame}{A concrete revision loop}
+\begin{enumerate}
+\item Freeze the counter contract and allowed input domain.
+\item Ask the LLM to implement the function and discharge obligations.
+\item Reject the \texttt{<=} candidate when verification fails.
+\item Revise the body to use \texttt{<}; check the same contract again.
+\item Inspect the changed argument and test the surrounding program.
+\end{enumerate}
+\begin{block}{Helpful prompt constraint}``Keep the contract unchanged. Do not introduce assumptions or bypass verification. Explain any remaining obligations.''\end{block}
+\note{A prompt constraint helps communicate intent but is not enforcement. Repository permissions, review, and CI must enforce the acceptance policy independently. Do not let an agent edit the verifier command to make a failed run appear successful.}
+\end{frame}
+
+\begin{frame}{Do not let a proof attempt change the theorem}
+\begin{itemize}
+\item \textbf{Weaken the conclusion:} replace $r=\min(x+1,L)$ by $r\le L$.
+\item \textbf{Strengthen the hypotheses:} exclude the failing boundary case.
+\item \textbf{Assume the claim:} introduce an unproved premise that implies it.
+\end{itemize}
+\begin{block}{The guardrail must preserve the statement}
+Fix the contract, audit new assumptions, and require all intended obligations to pass.
+\end{block}
+\note{These are familiar mathematical ways to prove something other than the original claim. An LLM repair loop can make the same moves. Review hypothesis changes even when they remain consistent. Tool errors and timeouts must not be counted as successful verification. Preserve the command, tool versions, and exact submitted code.}
+\end{frame}
+
+\begin{frame}{The guardrail has a defined reach}
+\begin{columns}[T]
+\column{.48\textwidth}
+\begin{block}{Can establish, when specified}
+\begin{itemize}
+\item Results satisfy a contract.
+\item Arithmetic stays in range.
+\item A modeled invariant is preserved.
+\end{itemize}
+\end{block}
+\column{.48\textwidth}
+\begin{block}{Still needs separate evidence}
+\begin{itemize}
+\item The contract matches user intent.
+\item External systems match the model.
+\item The algorithm is efficient enough to use.
+\end{itemize}
+\end{block}
+\end{columns}
+\vspace{6mm}
+\large Stronger acceptance criteria make generated code easier to evaluate.
+\note{Verification is especially valuable when humans can describe the invariant more reliably than they can inspect every generated implementation. Properties omitted from the contract remain outside the claim.}
+\end{frame}
+
+\begin{frame}{Start with one property worth keeping true}
+\begin{enumerate}
+\item Write the contract before polishing the implementation.
+\item Use Z3's counterexample-search model to understand proof obligations.
+\item Let Verus connect those obligations to Rust code.
+\item Make verification a required check for LLM-generated changes.
+\end{enumerate}
+\vspace{6mm}
+\Large Which theorem about an algorithm would you want its implementation to carry?
+\note{Invite questions. Possible mathematical examples: a sorting routine preserves the input multiset, Euclid steps preserve the gcd, or a numerical method maintains a certified error bound. Each requires a specification and an appropriate model of arithmetic; floating-point analysis requires additional care.}
+\end{frame}
+
+\begin{frame}{References and demo files}
+\small
+\begin{itemize}
+\item \href{https://verus-lang.github.io/verus/guide/}{Verus Tutorial and Reference}\par\scriptsize\url{https://verus-lang.github.io/verus/guide/}\small
+\item \href{https://github.com/verus-lang/verus}{Verus source and installation instructions}\par\scriptsize\url{https://github.com/verus-lang/verus}\small
+\item \href{https://microsoft.github.io/z3guide/}{Microsoft's Z3 Guide}\par\scriptsize\url{https://microsoft.github.io/z3guide/}\small
+\end{itemize}
+\medskip
+Local examples: \texttt{examples/counter.rs},\par
+\texttt{examples/counter-bug.smt2}, \texttt{examples/counter-fixed.smt2}.
+\note{The README documents build commands and validation status. Source links throughout the deck are clickable. Speaker notes live in the TeX source and are hidden in the audience PDF.}
+\end{frame}

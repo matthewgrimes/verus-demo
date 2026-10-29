@@ -7,10 +7,23 @@ The mathematical thread is: a specification as a theorem, execution as a relatio
 ## Files
 
 - `presentation.pdf`: audience slides.
-- `presentation.tex`: editable source, including speaker notes and clickable primary-source references.
+- `presentation.tex`: shared preamble, title slide, and section inputs.
+- `sections/*.tex`: one editable file per section, including its slides, speaker notes, and references.
 - `presentation-notes.pdf`: slides interleaved with speaker notes.
 - `examples/counter.rs`: complete Verus example (contract, callers, loop invariant).
 - `examples/counter-bug.smt2` and `examples/counter-fixed.smt2`: standalone Z3 demos.
+
+## Editing individual sections
+
+Edit the relevant file, then run `make` from the project root:
+
+- `sections/introduction.tex`
+- `sections/what-is-code-verification.tex`
+- `sections/z3.tex`
+- `sections/verus.tex`
+- `sections/verification-as-llm-guardrails.tex`
+
+Section files are loaded with `\input` and share the preamble in `presentation.tex`; compile the main document rather than a section file directly. Section order is controlled by the input lines in `presentation.tex`. Changes to section files trigger a rebuild.
 
 ## Build
 

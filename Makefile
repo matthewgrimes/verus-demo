@@ -1,6 +1,6 @@
 .PHONY: all clean demos verify notes
 all: presentation.pdf
-presentation.pdf: presentation.tex
+presentation.pdf: presentation.tex $(wildcard sections/*.tex)
 	latexmk -pdf -interaction=nonstopmode -halt-on-error presentation.tex
 notes:
 	pdflatex -interaction=nonstopmode -halt-on-error -jobname=presentation-notes '\AtBeginDocument{\setbeameroption{show notes}}\input{presentation.tex}'

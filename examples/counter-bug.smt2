@@ -1,8 +1,0 @@
-(set-logic QF_LIA)
-(declare-const x Int)
-(declare-const limit Int)
-(assert (and (<= 0 x) (<= x limit) (<= limit 4294967295)))
-(define-fun r () Int (ite (<= x limit) (+ x 1) x))
-(assert (> r limit))
-(check-sat)
-(get-model)

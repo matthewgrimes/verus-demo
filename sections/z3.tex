@@ -1,0 +1,81 @@
+\section{Z3}
+\begin{frame}{Z3: satisfiability relative to a theory}
+    In the last section, we asked whether or not
+\begin{align*}
+\exists x,y,m\in\mathbb{Z}: 
+&\left[(x>y)\land (m=x))\lor(\lnot(x>y)\land (m=y)\right]\\
+&\land \lnot\left[ (m=x \lor m=y) \land m\geq x\land m\geq y\right]
+\end{align*}
+is true.
+\par
+This is exactly the type of statement the SMT/SAT solver Z3 is designed to answer.
+\end{frame}
+
+\begin{frame}{Z3}
+
+
+\begin{block}{SMT: satisfiability modulo theories}
+    Given a formula and a background "theory", is the formula satisfiable?
+\end{block}
+\begin{itemize}
+\item Boolean combinations of constraints in supported theories.
+\item Examples: integer arithmetic, fixed-width bit-vectors, arrays.
+\item The theory determines the meaning of symbols such as $+$ and $\le$.
+\end{itemize}
+\medskip For our example: linear constraints over the integers.
+\source{https://microsoft.github.io/z3guide/}{Microsoft's Z3 Guide}
+\end{frame}
+
+\begin{frame}{Prove a property by searching for its violation}
+\[\neg\exists s,s':\ P(s)\land C(s,s')\land\neg Q(s').\]
+Ask whether the existential counterexample formula is satisfiable.
+\begin{center}
+\begin{tikzpicture}[node distance=8mm, every node/.style={font=\small},box/.style={draw=Teal,rounded corners,align=center,minimum height=12mm,text width=33mm}]
+\node[box] (p) {Permitted input};
+\node[box,right=of p] (c) {Computed result};
+\node[box,right=of c] (q) {Broken promise};
+\draw[-{Stealth},thick,Teal] (p)--(c);
+\draw[-{Stealth},thick,Teal] (c)--(q);
+\end{tikzpicture}
+\end{center}
+\begin{itemize}
+\item \texttt{sat}: a violation exists in this encoding.
+\item \texttt{unsat}: no such violation exists in this encoding.
+\item \texttt{unknown}: the solver could not decide; no proof obtained.
+\end{itemize}
+\source{https://microsoft.github.io/z3guide/docs/logic/basiccommands/}{Z3 Guide: Basic Commands}
+\note{A timeout also leaves the obligation unproved. With abstractions, a satisfying model may require interpretation before calling it a real program counterexample. Our small exact arithmetic example has a direct interpretation.}
+\end{frame}
+
+\begin{frame}[fragile]{Ask Z3 to find any bugs}
+\begin{lstlisting}[language={},basicstyle=\ttfamily\fontsize{6}{7}\selectfont]
+(define-fun is_max ((m Int) (x Int) (y Int)) Bool
+    (and
+        (>= m x)
+        (>= m y)
+        (or
+            (= m x)
+            (= m y)
+        )
+    )
+)
+(define-fun max ((x Int) (y Int)) Int
+    (ite (> x y) x y)
+)
+
+(declare-const x Int)
+(declare-const y Int)
+(declare-const m Int)
+(assert
+    (and
+        (= m (max x y))
+        (not (is_max m x y))
+    )
+)
+(check-sat)
+(get-model)
+\end{lstlisting}
+Result: \texttt{unsat}
+\end{frame}
+
+

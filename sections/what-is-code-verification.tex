@@ -1,0 +1,78 @@
+\section{What is code verification}
+\begin{frame}{What does it mean for code to be "correct?"}
+    To ask if code is "correct," we have to formulate a formal claim about what the code does.
+    \begin{block}{Taking a max}
+        If $max$ returns the max of two integers, $x$ and $y$, we expect the following properties:
+        \begin{itemize}
+        \item $max(x,y) \in \{x,y\}$ 
+        \item $max(x,y)\geq x$
+        \item $max(x,y)\geq y$
+        \end{itemize}
+    \end{block}
+\end{frame}
+
+\begin{frame}{Taking the max of two integers}
+    We can state the logical claim as 
+    $$\forall x,y,m\in\mathbb{Z},\, m=\text{max}(x,y)\implies (m=x \lor m=y) \land m\geq x\land m\geq y$$
+    In general, $a\implies b$ is equivalent to $\lnot a \lor b$.
+    \medskip
+    We can thus rewrite
+    $$\forall x,y,m\in\mathbb{Z},\, \lnot(m=\text{max}(x,y))\lor\left( (m=x \lor m=y) \land m\geq x\land m\geq y\right)$$
+    Equivalently, the implementation of max has a bug if
+    $$\exists x,y,m\in\mathbb{Z},\, (m=\text{max}(x,y))\land \lnot\left( (m=x \lor m=y) \land m\geq x\land m\geq y\right)$$
+\end{frame}
+
+\begin{frame}{The general formulation}
+Let $s$ and $s'$ denote program states, and let $C(s,s')$ mean that\par
+program $C$ can terminate in $s'$ when started in $s$.
+\[
+ \forall s,s',\ P(s)\land C(s,s')\Longrightarrow Q(s')
+ \quad:=\quad
+ \{P\}\ C\ \{Q\}
+\]
+\begin{itemize}
+\item $P$: a predicate on the initial state (the precondition).
+\item $Q$: a predicate on the final state (the postcondition).
+\item Initial values can be retained in the state to express input--output relations.
+\end{itemize}
+\begin{block}{Applied to max}
+    In our example we have
+    \begin{itemize}
+        \item $P$: $x$ and $y$ are integers
+        \item $C$: the implementation of max
+        \item $Q$: $m\geq x\land m\geq y\land (m=y\lor m=x)$
+    \end{itemize}
+\end{block}
+\end{frame}
+
+\begin{frame}[fragile]{What about the implementation?}
+    In pseudo-code, we can define a naive implementation of max:
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize]
+fn max(x: int, y: int) -> (m: int)
+{
+    if x > y
+    {
+        return x;
+    } else
+    {
+        return y;
+    }
+
+}
+\end{lstlisting}
+Logically, this implementation says
+\[
+m=\text{max}(x,y):= ((x>y)\land (m=x))\lor(\lnot(x>y)\land (m=y))
+\]
+\end{frame}
+
+\begin{frame}{Putting it all together}
+    We can combine everything on the prior slides into the following statement: our implementation of max is \emph{incorrect}
+    if and only if
+\begin{align*}
+\exists x,y,m\in\mathbb{Z}: 
+&\left[(x>y)\land (m=x))\lor(\lnot(x>y)\land (m=y)\right]\\
+&\land \lnot\left[ (m=x \lor m=y) \land m\geq x\land m\geq y\right]
+\end{align*}
+We can see by inspection that the claim is false, there is no counter-example, and the implementation is proven correct.
+\end{frame}

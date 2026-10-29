@@ -1,0 +1,150 @@
+\section{Verus}
+
+\begin{frame}{Verus connects Rust code to proof obligations}
+\begin{center}
+\begin{tikzpicture}[node distance=6mm,box/.style={draw=Teal,rounded corners,align=center,minimum height=15mm,text width=28mm,font=\small}]
+\node[box] (s) {Rust code\\+ contracts};
+\node[box,right=of s] (v) {Verus\\obligations};
+\node[box,right=of v] (z) {Z3\\checks};
+\draw[-{Stealth},thick,Teal] (s)--(v);
+\draw[-{Stealth},thick,Teal] (v)--(z);
+\end{tikzpicture}
+\end{center}
+\begin{itemize}
+\item Write specifications and proofs alongside executable code.
+\item Verify supported Rust code with annotations and library specifications.
+\item Erase specification/proof code when compiling the executable.
+\end{itemize}
+\source{https://github.com/verus-lang/verus}{Verus project}\source{https://verus-lang.github.io/verus/guide/modes.html}{Verus Guide: code modes}
+\note{Verus supports a subset of Rust; existing crates are not automatically fully verified. The diagram is conceptual, not a complete description of the internal compiler pipeline.}
+\end{frame}
+
+\begin{frame}{Three modes, three jobs}
+\begin{tabular}{p{.17\textwidth}p{.38\textwidth}p{.32\textwidth}}
+\toprule
+Mode & Purpose & Example \\\midrule
+\texttt{exec} & Actual computation & Update a counter \\\addlinespace
+\texttt{spec} & Mathematical definitions & Describe the desired result \\\addlinespace
+\texttt{proof} & Establish logical facts & Supply a lemma or assertion \\\bottomrule
+\end{tabular}
+\vspace{5mm}
+\begin{itemize}
+\item Think: computation, definition, and lemma.
+\item Specifications can use mathematical \texttt{int} and \texttt{nat}.
+\item Ghost code is reasoning-only code, erased before execution.
+\end{itemize}
+\source{https://verus-lang.github.io/verus/guide/modes.html}{Verus Guide: code modes}
+\note{Machine integers still matter in exec code. Mathematical types let the specification describe arithmetic without silently wrapping. Proof functions can package reusable arguments.}
+\end{frame}
+
+\begin{frame}[fragile]{Implementing max in Rust}
+\begin{lstlisting}
+fn max(x: i64, limit: i64) -> i64
+{
+    if x>y {x} else {y}
+}
+\end{lstlisting}
+\end{frame}
+\begin{frame}[fragile]{Decorating our implementation with Verus}
+\begin{lstlisting}
+fn max(x: i64, limit: i64) -> (m: i64)
+    ensures
+        m>=x,
+        m>=y,
+        (m==x) || (m==y)
+{
+    if x>y {x} else {y}
+}
+\end{lstlisting}
+\begin{itemize}
+\item \texttt{requires}: what callers must establish.
+\item \texttt{ensures}: what callers may rely on afterward.
+\item Verus also checks the executable addition for overflow.
+\end{itemize}
+\source{https://verus-lang.github.io/verus/guide/requires_ensures.html}{Verus Guide: contracts}
+\note{The complete file adds use vstd::prelude::* and a verus! block. In specification expressions, the addition is mathematical. In the executable branch, x < limit and the u32 bound on limit justify x + 1. This is intended to be an automatically discharged example.}
+\end{frame}
+
+\begin{frame}{What must be established?}
+\begin{enumerate}
+\item \textbf{Safe addition:} $x<\mathit{limit}\le\texttt{u32::MAX}$ gives room to increment.
+\item \textbf{Bounded result:} each branch returns at most the limit.
+\item \textbf{Exact behavior:} increment below the limit, stay put at the limit.
+\end{enumerate}
+\begin{block}{Try the original bug}Replace \texttt{x < limit} with \texttt{x <= limit} in the body.\par The same contract should reject the implementation.\end{block}
+\note{Keep the specification unchanged during this mutation. At equality the body disagrees with the exact postcondition and breaks the bound; at MAX the body can overflow as well. This is a useful demonstration even when not running live.}
+\end{frame}
+
+\begin{frame}{Using a verified function is applying a lemma}
+Suppose we have established
+\[
+ \forall x,L\in\{0,\ldots,2^{32}-1\},\quad
+ x\le L\ \Longrightarrow\ \operatorname{advance}(x,L)=\min(x+1,L).
+\]
+\begin{itemize}
+\item Instantiate at $(x,L)=(4,5)$ to deduce the result is $5$.
+\item Instantiate at $(x,L)=(5,5)$ to deduce the result is again $5$.
+\item At $(x,L)=(6,5)$, the hypothesis fails; the theorem gives no guarantee.
+\end{itemize}
+\begin{block}{Modular proof}
+Subsequent arguments use the function's contract as a lemma.\par
+They need not repeat the proof about its implementation.
+\end{block}
+\note{The displayed functional equation is justified for this terminating function. General Hoare contracts need the partial-correctness qualification discussed earlier. The corresponding client assertions are retained in examples/counter.rs.}
+\end{frame}
+
+
+\begin{frame}{A loop invariant is an induction hypothesis}
+For \texttt{while} $B$ \texttt{do} $C$, choose a predicate $I$ on states.
+\[
+ \underbrace{P\Rightarrow I}_{\text{base case}},\qquad
+ \underbrace{\{I\land B\}\ C\ \{I\}}_{\text{inductive step}},\qquad
+ \underbrace{I\land\neg B\Rightarrow Q}_{\text{conclusion at exit}}.
+\]
+For repeated bounded successor, take $I(x)\equiv 0\le x\le L$.
+\begin{itemize}
+\item Initially: $0\le x_0\le L$ is assumed.
+\item If $x<L$, then $x'=x+1\le L$; the invariant is preserved.
+\item At exit: $x\le L$ and $\neg(x<L)$ imply $x=L$.
+\end{itemize}
+\begin{block}{Termination uses well-foundedness}
+$V(x)=L-x\in\mathbb{N}$ decreases strictly on every iteration.
+\end{block}
+\note{Induct on the number of completed iterations. The invariant includes the state where the guard is false, so x < L would be too strong. Nonnegativity is implicit for u32 in the upcoming code. A strictly descending sequence in the naturals cannot be infinite; this is the separate termination argument.}
+\end{frame}
+
+\begin{frame}[fragile]{Loops need an invariant}
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize]
+fn fill_to_limit(start: u32, limit: u32) -> (r: u32)
+    requires start <= limit,
+    ensures r == limit,
+{
+    let mut x = start;
+    while x < limit
+        invariant x <= limit,
+        decreases limit - x,
+    {
+        x = advance(x, limit);
+    }
+    x
+}
+\end{lstlisting}
+\small Invariant: we stay within the limit. Variant: the remaining distance shrinks.
+\source{https://verus-lang.github.io/verus/guide/while.html}{Verus Guide: Loops and invariants}
+\note{Deliberately simple, not a recommended implementation of assignment. Establish the invariant initially, preserve it after each step, then combine it with the negated guard to get equality. The variant is nonnegative and strictly decreases while the guard holds.}
+\end{frame}
+
+\begin{frame}{What is being trusted?}
+\begin{itemize}
+\item The specification captures the intended theorem.
+\item The translation from code to logical obligations is sound.
+\item The solver's result and any assumed lemmas are correct.
+\item Compilation and execution preserve the verified meaning.
+\end{itemize}
+\begin{block}{Distinguish proof search from proof checking}
+Here we rely on the Verus/Z3 verification pipeline.\par
+We are not presenting an independently checked proof certificate.
+\end{block}
+\note{This is a natural question for an audience familiar with proof assistants. Explain the trust boundary of this workflow without implying that SMT solvers cannot produce proofs or that other proof systems have no trusted components. Our demonstration runs verification; it does not export a certificate to a separate small kernel.}
+\end{frame}
+
