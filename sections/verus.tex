@@ -1,6 +1,6 @@
 \section{Verus}
 
-\begin{frame}{Verus connects Rust code to proof obligations}
+\begin{frame}{Verus connects Rust code to Z3}
 \begin{center}
 \begin{tikzpicture}[node distance=6mm,box/.style={draw=Teal,rounded corners,align=center,minimum height=15mm,text width=28mm,font=\small}]
 \node[box] (s) {Rust code\\+ contracts};
@@ -65,19 +65,6 @@ fn max(x: i64, y: i64) -> (m: i64)
 \note{The complete file is examples/max.rs. There are no preconditions on the two i64 inputs. The executable function only compares and selects, so there is no arithmetic-overflow obligation for its body. The three postconditions characterize the maximum.}
 \end{frame}
 
-\begin{frame}{What must be established?}
-\begin{enumerate}
-\item \textbf{Upper bound:} the result $m$ satisfies $m\ge x$ and $m\ge y$.
-\item \textbf{Attainment:} $m=x$ or $m=y$; the result is one of the inputs.
-\item \textbf{Both branches:} if $x>y$, return $x$; otherwise $y\ge x$, so return $y$.
-\end{enumerate}
-\begin{block}{A mutation the contract rejects}
-Swap the returned values: \texttt{if x > y \{ y \} else \{ x \}}.\par
-For $x=5$, $y=3$, the result $3$ fails $m\ge x$.
-\end{block}
-\note{No addition occurs in this implementation. The proof is a case split in a total order. At equality either input is a valid maximum, so changing > to >= is not a bug; swapping the returned branches is. The attainment clause matters: an arbitrary upper bound need not be the maximum.}
-\end{frame}
-
 \begin{frame}{Using a verified function is applying a lemma}
 Let $M(a,b)$ denote the verified function. Its contract gives
 \[
@@ -95,30 +82,9 @@ We need not inspect either function call's implementation.
 \note{All inputs are representable machine integers; comparison and selection stay in the same type. This is ordinary lemma application followed by transitivity. Repeating this argument suggests the maximum-over-a-slice algorithm on the next slides.}
 \end{frame}
 
-
-\begin{frame}{A loop invariant is an induction hypothesis}
-For a nonempty slice $a=(a_0,\ldots,a_{n-1})$, after processing $i$ elements:
-\[
- I(i,b)\equiv 1\le i\le n\ \land\
- (\forall k<i,\ a_k\le b)\ \land\
- (\exists j<i,\ a_j=b).
-\]
-Here $j,k$ range over nonnegative integers: $b$ is the maximum of the prefix.
-\begin{itemize}
-\item \textbf{Base case:} $i=1$, $b=a_0$.
-\item \textbf{Inductive step:} replace $b$ by $\max(b,a_i)$, then increment $i$.
-\item \textbf{At exit:} $i=n$, so the prefix is the whole slice.
-\end{itemize}
-\begin{block}{Termination uses well-foundedness}
-$V(i)=n-i\in\mathbb{N}$ decreases strictly on every iteration.
-\end{block}
-\note{The universal clause is an upper bound; the existential clause gives a witness attaining it. Together they specify the maximum rather than just an upper bound. The index bounds justify reading $a_i$ while the guard holds. Initialization reads $a_0$, which is why the input must be nonempty.}
-\end{frame}
-
 \begin{frame}[fragile]{Maximum over a nonempty \texttt{u64} slice}
 \lstinputlisting[firstline=5,lastline=9]{examples/max_iter.rs}
 \begin{itemize}
-\item \texttt{\&[u64]}: a borrowed sequence of integers in $\{0,\ldots,2^{64}-1\}$.
 \item Nonempty input: a maximum must be attained by some element.
 \item First postcondition: $m$ bounds every element from above.
 \item Second postcondition: an element actually equals $m$.
@@ -126,24 +92,42 @@ $V(i)=n-i\in\mathbb{N}$ decreases strictly on every iteration.
 \note{The binary example used i64. For this loop example we use u64 as requested; the same order argument works for both. A slice is a sequence viewed without copying it. The mathematical int indices in the quantifiers are ghost expressions, not runtime iteration.}
 \end{frame}
 
+\begin{frame}{What about loops?}
+    Verus handles loops in rust by induction.
+    
+    For each loop, we must establish that
+    \begin{itemize}
+        \item it terminates
+        \item the induction hypothesis implies the next step
+    \end{itemize}
+    \begin{block}{Proof idea}
+        \small
+        We assume \texttt{values} is non-empty, so use induction on the length of \texttt{values}.
+        \begin{itemize}
+            \setlength{\itemsep}{3pt}
+            \item If \texttt{values.len() == 1}, then the max is \texttt{values[0]}.
+            \item For the induction hypothesis, assume that for all
+                $k < \texttt{values.len()}$, $\texttt{values[0..k]} \le \texttt{values[j]}$, for some $j<k$.
+            \item We can then consider \texttt{values[k+1]}---if it's greater than the current max use it, otherwise stick with what we have.
+            \item This process terminates because \texttt{values} is of finite length.
+        \end{itemize}
+    \end{block}
+\end{frame}
+
 \begin{frame}[fragile]{The induction hypothesis in Verus}
 \lstinputlisting[firstline=10,lastline=26,basicstyle=\ttfamily\fontsize{8}{9}\selectfont]{examples/max_iter.rs}
-\small A single pass: $O(n)$ time and $O(1)$ additional space.
 \source{https://verus-lang.github.io/verus/guide/while.html}{Verus Guide: Loops and invariants}
-\note{This is the body of max from the preceding slide, read directly from examples/max\_iter.rs. best represents b and values represents a. The loop starts at 1 because values[0] has already been processed. While i < len, the next access is in bounds and i + 1 cannot overflow usize. There is no arithmetic on the u64 elements. Verus checks the upper-bound and witness invariants, the postconditions, and the decreasing distance to the end.}
 \end{frame}
 
 \begin{frame}{What is being trusted?}
 \begin{itemize}
 \item The specification captures the intended theorem.
+\pause
 \item The translation from code to logical obligations is sound.
+\pause
 \item The solver's result and any assumed lemmas are correct.
+\pause
 \item Compilation and execution preserve the verified meaning.
 \end{itemize}
-\begin{block}{Distinguish proof search from proof checking}
-Here we rely on the Verus/Z3 verification pipeline.\par
-We are not presenting an independently checked proof certificate.
-\end{block}
-\note{This is a natural question for an audience familiar with proof assistants. Explain the trust boundary of this workflow without implying that SMT solvers cannot produce proofs or that other proof systems have no trusted components. Our demonstration runs verification; it does not export a certificate to a separate small kernel.}
 \end{frame}
 

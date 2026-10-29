@@ -6,7 +6,7 @@ spec fn is_upper_bound(m: u64, values: &[u64]) -> bool {
         forall|k: int| 0 <= k < values.len() ==> values[k] <= m
 }
 
-fn max(values: &[u64]) -> (m: u64)
+fn sup(values: &[u64]) -> (m: u64)
     ensures
         is_upper_bound(m, values),
         forall|z: u64| is_upper_bound(z, values) ==> m <= z,
@@ -34,7 +34,7 @@ fn max(values: &[u64]) -> (m: u64)
 
 // In the finite, totally ordered set u64, a nonempty list attains its
 // least upper bound. This uses only the abstract contract, not the loop.
-proof fn max_in_set_if_nonempty(values: &[u64], m: u64)
+proof fn sup_in_set_if_nonempty(values: &[u64], m: u64)
     requires
         values.len() > 0,
         is_upper_bound(m, values),

@@ -13,8 +13,6 @@
 \end{tikzpicture}
 \end{center}
 \vspace{6mm}
-\large Plausibility is not a proof: check the generated construction against a fixed claim.
-\note{This is a proposed engineering workflow, not a claim that Verus guarantees all LLM output is safe. LLMs can help draft implementations, invariants, and lemmas; the generated proof text itself is not evidence until checked.}
 \end{frame}
 
 \begin{frame}{A concrete task: count equal pairs}
@@ -29,33 +27,34 @@ For $s=[4,4,4,9,9]$, there are $\binom{3}{2}+\binom{2}{2}=4$ pairs.
 \]
 Appending $v$ creates one pair with each earlier occurrence of $v$.
 \end{block}
-\note{This counts unordered pairs of distinct positions, each once. It does not count only distinct repeated values or disjoint pairs: three occurrences produce three pairs. The original request was to implement this specification as fast as possible while leaving its definition and the function contract unchanged. The file's filter expression counts matching elements in the prefix.}
 \end{frame}
 
-\begin{frame}{A concrete revision loop: \texttt{equal\_pairs.rs}}
-\begin{enumerate}
-\item \textbf{Check the statement:} a length bound alone does not ensure the pair count fits in \texttt{u64}.
-\item \textbf{Human correction:} require $E(s)\le 2^{64}-1$; then fix the contract.
-\item \textbf{Generate efficient code:} maintain frequencies; a value seen $c$ times contributes $c$ new pairs.
-\item \textbf{Revise the proof:} add prefix lemmas and invariants; rerun Verus until all obligations pass.
-\end{enumerate}
-\begin{block}{Result}
-Expected $O(n)$ time; $O(k)$ space for $k$ distinct values.\par
-Verus: 6 verified, 0 errors; the corrected contract and original spec are unchanged.
-\end{block}
-\note{This is the actual interaction behind examples/equal\_pairs.rs. An all-equal input has n(n-1)/2 pairs, so the original length precondition was insufficient for a u64 result. The human explicitly corrected the precondition; the model did not silently weaken the theorem to obtain a pass. The implementation uses HashMap::entry to add the old frequency and increment it. Its invariants relate the accumulator to E of the processed prefix and the map to prefix frequencies. Proof revisions included identifying equal filter predicates and selecting quantifier triggers. Prefix monotonicity proves partial sums cannot overflow. Complexity is an algorithmic analysis, not a property proved by this contract; hash-table costs are expected amortized.}
-\end{frame}
+\begin{frame}[fragile]{The Spec and Task}
+\begin{lstlisting}[language={},basicstyle=\ttfamily\fontsize{6}{7}\selectfont]
+pub open spec fn spec_equal_pairs(s: Seq<u64>) -> nat
+    decreases s.len()
+{
+    if s.len() == 0 {
+        0
+    } else {
+        let prefix = s.drop_last();
 
-\begin{frame}{Do not let a proof attempt change the theorem}
-\begin{itemize}
-\item \textbf{Weaken the conclusion:} drop $m\in\{x,y\}$, permitting any upper bound.
-\item \textbf{Strengthen the hypotheses:} require $x=y$, hiding a minimum/maximum mix-up.
-\item \textbf{Assume the claim:} introduce an unproved premise that implies it.
-\end{itemize}
-\begin{block}{The guardrail must preserve the statement}
-Fix the contract, audit new assumptions, and require all intended obligations to pass.
-\end{block}
-\note{These are familiar mathematical ways to prove something other than the original claim. An LLM repair loop can make the same moves. Review hypothesis changes even when they remain consistent. Tool errors and timeouts must not be counted as successful verification. Preserve the command, tool versions, and exact submitted code.}
+        spec_equal_pairs(prefix)
+            + prefix.filter(|x: u64| x == s.last()).len()
+    }
+}
+
+fn equal_pairs(s: &[u64]) -> (r: u64)
+    requires
+        spec_equal_pairs(s@) <= u64::MAX
+    ensures
+        r == spec_equal_pairs(s@)
+{
+    <LLM can write here>
+}
+
+\end{lstlisting}
+
 \end{frame}
 
 \begin{frame}{The guardrail has a defined reach}
@@ -79,24 +78,22 @@ Fix the contract, audit new assumptions, and require all intended obligations to
 \end{columns}
 \vspace{6mm}
 \large Stronger acceptance criteria make generated code easier to evaluate.
-\note{Verification is especially valuable when humans can describe the invariant more reliably than they can inspect every generated implementation. Properties omitted from the contract remain outside the claim.}
 \end{frame}
 
-\begin{frame}{Start with one property worth keeping true}
+\begin{frame}{In Practice}
 \begin{enumerate}
 \item Write the contract before polishing the implementation.
-\item Use Z3's counterexample-search model to understand proof obligations.
-\item Let Verus connect those obligations to Rust code.
+\item Gradually add contract components for existing code.
 \item Make verification a required check for LLM-generated changes.
 \end{enumerate}
 \vspace{6mm}
-\Large Which theorem about an algorithm would you want its implementation to carry?
-\note{Invite questions. Possible mathematical examples: a sorting routine preserves the input multiset, Euclid steps preserve the gcd, or a numerical method maintains a certified error bound. Each requires a specification and an appropriate model of arithmetic; floating-point analysis requires additional care.}
 \end{frame}
 
 \begin{frame}{References and demo files}
 \small
 \begin{itemize}
+\item \href{https://github.com/matthewgrimes/verus-demo}{This deck along with examples}\par\scriptsize\url{https://github.com/matthewgrimes/verus-demo}\small
+\item \href{https://verus-lang.github.io/verus/guide/}{Verus Tutorial and Reference}\par\scriptsize\url{https://verus-lang.github.io/verus/guide/}\small
 \item \href{https://verus-lang.github.io/verus/guide/}{Verus Tutorial and Reference}\par\scriptsize\url{https://verus-lang.github.io/verus/guide/}\small
 \item \href{https://github.com/verus-lang/verus}{Verus source and installation instructions}\par\scriptsize\url{https://github.com/verus-lang/verus}\small
 \item \href{https://microsoft.github.io/z3guide/}{Microsoft's Z3 Guide}\par\scriptsize\url{https://microsoft.github.io/z3guide/}\small
@@ -104,5 +101,4 @@ Fix the contract, audit new assumptions, and require all intended obligations to
 \medskip
 Local examples: \texttt{examples/max.rs}, \texttt{examples/max\_iter.rs},\par
 \texttt{examples/max.smt2}, \texttt{examples/equal\_pairs.rs}.
-\note{The README documents build commands and validation status. Source links throughout the deck are clickable. Speaker notes live in the TeX source and are hidden in the audience PDF.}
 \end{frame}

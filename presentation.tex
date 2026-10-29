@@ -25,6 +25,12 @@
 \lstdefinelanguage{Verus}{keywords={fn,let,mut,if,else,while,return,use,pub,as,requires,ensures,invariant,decreases,spec,proof,assert,true,false},morecomment=[l]{//},morestring=[b]"}
 \lstset{language=Verus,basicstyle=\ttfamily\small,keywordstyle=\color{Teal}\bfseries,commentstyle=\color{gray},stringstyle=\color{Rust},backgroundcolor=\color{Mist},frame=none,xleftmargin=2mm,xrightmargin=2mm,aboveskip=2mm,belowskip=2mm,showstringspaces=false,columns=fullflexible,keepspaces=true}
 \newcommand{\source}[2]{\vfill{\tiny\color{gray}Source: \href{#1}{#2}}}
+% Repeat the agenda at each section boundary, dimming other sections.
+\AtBeginSection[]{
+    \begin{frame}{\insertsectionhead}
+        \tableofcontents[currentsection,hideallsubsections]
+    \end{frame}
+}
 \title{Code Verification in Rust with Verus}
 \author{Matt Grimes}
 \date{Oct 30 2026}
