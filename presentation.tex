@@ -26,7 +26,7 @@
 \lstset{language=Verus,basicstyle=\ttfamily\small,keywordstyle=\color{Teal}\bfseries,commentstyle=\color{gray},stringstyle=\color{Rust},backgroundcolor=\color{Mist},frame=none,xleftmargin=2mm,xrightmargin=2mm,aboveskip=2mm,belowskip=2mm,showstringspaces=false,columns=fullflexible,keepspaces=true}
 \newcommand{\source}[2]{\vfill{\tiny\color{gray}Source: \href{#1}{#2}}}
 \title{Code Verification in Rust with Verus}
-\subtitle{From intended behavior to machine-checked contracts}
+\subtitle{Programs as mathematical objects; correctness as a theorem}
 \author{}
 \date{}
 \begin{document}
@@ -35,37 +35,37 @@
 \end{frame}
 
 \section{Introduction}
-\begin{frame}{The question behind this talk}
-\Large Can we check that code does what we intended\textemdash before we run it?
-\vspace{7mm}
-\normalsize
-\begin{itemize}\item Rust rules out many memory-safety bugs in safe code.
-\item Tests exercise concrete executions.
-\item Verification checks explicitly stated properties across permitted inputs.
+\begin{frame}{When an algorithm becomes a program}
+\Large A proof about an algorithm is a starting point.\par
+\medskip What theorem does its implementation satisfy?
+\vspace{5mm}\normalsize
+\begin{itemize}
+\item Specify the domain, hypotheses, and desired conclusion.
+\item Model execution as a relation between states.
+\item Prove that every permitted execution preserves the claim.
 \end{itemize}
-\begin{block}{Our running example}Advance a counter without ever exceeding its limit.\end{block}
-\note{Audience: developers comfortable reading Rust; no formal-methods background assumed. Aim for about 30 minutes plus questions. Ask the audience what evidence they usually require before trusting a small generated function.}
+\begin{block}{Today's example}A bounded successor: increment an integer until it reaches a limit.\end{block}
+\note{Audience: a graduate mathematics department. Assume comfort with proofs, quantifiers, and induction; assume no Rust knowledge or specialist training in logic. Aim for 30--35 minutes plus questions. Motivate with the gap between a mathematical algorithm and its finite-machine implementation.}
 \end{frame}
 
 \begin{frame}{The route}
 \tableofcontents
-\note{Timing: introduction 3 minutes; verification 5; Z3 5; Verus 10; LLM guardrails 7. The same counter example connects the sections.}
+\note{Timing: introduction 4 minutes; verification 7; Z3 6; Verus 10; LLM guardrails 6. Emphasize the logical translation and induction argument. The same bounded-successor example connects the sections.}
 \end{frame}
 
-\begin{frame}[fragile]{A small function with a boundary bug}
-\begin{lstlisting}
-fn advance(x: u32, limit: u32) -> u32 {
-    if x <= limit { x + 1 } else { x }
-}
-\end{lstlisting}
-\begin{itemize}
-\item Intended inputs: $0 \le x \le \mathit{limit}$.
-\item At $x=4$, $\mathit{limit}=5$: the result looks right.
-\item At $x=5$, $\mathit{limit}=5$: the result exceeds the limit.
-\item At \texttt{u32::MAX}: the addition also risks overflow.
-\end{itemize}
-\begin{block}{The missing question}What must hold for \emph{every} permitted input?\end{block}
-\note{Do not frame this as a failure of testing: a boundary test catches it immediately. The point is to make the intended behavior explicit and check the whole allowed input domain. Rust's type checker accepts this code. Overflow behavior depends on build settings.}
+\begin{frame}{A bounded successor: the intended mathematics}
+For a fixed $L\in\mathbb{N}$, define
+\[
+ f_L:\{0,\ldots,L\}\longrightarrow\{0,\ldots,L\},\qquad
+ f_L(x)=\min(x+1,L).
+\]
+\begin{block}{A tempting implementation}
+\[g_L(x)=\begin{cases}x+1 & x\le L,\\x & x>L.\end{cases}\]
+\end{block}
+At $x=L$, we obtain $g_L(L)=L+1$: the claimed codomain is violated.
+\medskip\par
+We want a proof of $\forall x\in\{0,\ldots,L\},\ g_L(x)=f_L(x)$\textemdash or a counterexample.
+\note{Start with familiar mathematics rather than unfamiliar syntax. The error is deliberately elementary: the interesting question is how to turn its detection into a mechanical procedure. A few successful evaluations do not establish the universally quantified claim.}
 \end{frame}
 
 \section{What is code verification}
@@ -90,57 +90,71 @@ $r=\begin{cases}x+1 & x<\mathit{limit}\\x & x=\mathit{limit}\end{cases}$
 \note{These equations use mathematical integers. Later, Verus must additionally establish that executable u32 arithmetic is safe. Preconditions restrict the promise; they do not validate external input at runtime.}
 \end{frame}
 
-\begin{frame}{What does a proof establish?}
-\[\{P\}\;C\;\{Q\}\]
+\begin{frame}{Hoare triples are statements about executions}
+Let $s$ and $s'$ denote program states, and let $C(s,s')$ mean that\par
+program $C$ can terminate in $s'$ when started in $s$.
+\[
+ \{P\}\ C\ \{Q\}
+ \quad\Longleftrightarrow\quad
+ \forall s,s',\ P(s)\land C(s,s')\Longrightarrow Q(s').
+\]
 \begin{itemize}
-\item $P$: assumptions about the input and initial state.
-\item $C$: the implementation.
-\item $Q$: the property of the result and final state.
+\item $P$: a predicate on the initial state (the precondition).
+\item $Q$: a predicate on the final state (the postcondition).
+\item Initial values can be retained in the state to express input--output relations.
 \end{itemize}
-\begin{block}{Read it as a conditional promise}If $P$ holds and $C$ returns, then $Q$ holds.\end{block}
-\medskip Termination is an additional obligation when claiming total correctness.
-\note{This is partial correctness. Avoid saying that all verified programs terminate automatically. Safety obligations, such as preventing overflow, are additional checks generated by a verifier.}
+\begin{block}{Partial versus total correctness}This statement constrains terminating executions.\par Total correctness additionally requires termination on permitted inputs.\end{block}
+\note{This is a semantic reading of the Hoare triple. C is a relation, not necessarily a total function. A nonterminating computation has no final state, so the implication alone cannot rule it out. Safety conditions such as overflow must also be represented or checked separately.}
 \end{frame}
 
-\begin{frame}{Different tools provide different evidence}
-\small
-\begin{tabular}{p{.19\textwidth}p{.34\textwidth}p{.35\textwidth}}
-\toprule
-Tool & Evidence & Boundary \\\midrule
-Rust type checker & Types, ownership, borrowing & Does not establish arbitrary business rules \\\addlinespace
-Tests / fuzzing & Behavior on explored executions & Unexplored inputs remain \\\addlinespace
-Deductive verification & Contract holds over modeled inputs & Depends on specification and trusted assumptions \\\bottomrule
-\end{tabular}
-\vspace{6mm}
-\large Keep all three: each answers a useful question.
-\note{Verification does not replace integration tests, performance measurements, or checking the real deployment environment. Safe Rust's guarantees also depend on the soundness of unsafe implementations underneath it.}
+\begin{frame}{From assignments to proof obligations}
+To establish $Q$ after an assignment $x:=e$, establish $Q[e/x]$ before it:
+\[
+ \{Q[e/x]\}\ x:=e\ \{Q\}.
+\]
+For example, with $Q(x)\equiv x\le L$ and $e=x+1$,
+\[
+ Q[e/x]\equiv x+1\le L.
+\]
+\begin{block}{A branch supplies a hypothesis}
+Over $\mathbb{Z}$, the guard $x<L$ implies $x+1\le L$.\par
+The guard $x\le L$ does not.
+\end{block}
+\note{Here Q[e/x] denotes capture-avoiding substitution. For this pure assignment over mathematical integers, it is the weakest precondition. Machine arithmetic adds definedness and range obligations. The implication uses discreteness: over the reals x < L would not be sufficient for x + 1 <= L.}
 \end{frame}
 
-\begin{frame}{A proof can be correct and still miss the requirement}
+\begin{frame}{The statement of the theorem matters}
 \begin{itemize}
-\item \textbf{Weak promise:} ``result is within the limit'' permits doing nothing.
-\item \textbf{Impossible premise:} contradictory preconditions make a claim vacuous.
-\item \textbf{Missing model:} a counter proof says nothing about persistence or races.
+\item \textbf{Too weak:} $0\le r\le L$ is also satisfied by $r=0$.
+\item \textbf{Vacuous:} an inconsistent $P$ makes $P\Rightarrow Q$ valid for any $Q$.
+\item \textbf{Wrong structure:} arithmetic in $\mathbb{Z}$ differs from arithmetic modulo $2^{32}$.
 \end{itemize}
-\begin{block}{Review the specification as carefully as the implementation}A verifier checks a formal statement. People decide whether it captures the requirement.\end{block}
-\note{Use the counter to make this concrete: a product requirement may include atomic updates across threads. Our pure function models no shared state, so its contract cannot establish that property.}
+\begin{block}{Two separate questions}
+Does the implementation satisfy the formal specification?\par
+Does the formal specification express the intended mathematics?
+\end{block}
+\note{Compare this with proving a theorem under accidentally contradictory hypotheses, or proving a statement in the wrong category of objects. Formal verification checks the formal claim; choosing the right claim remains mathematical work.}
 \end{frame}
 
 \section{Z3}
-\begin{frame}{Z3 checks logical constraints}
-\begin{block}{SMT: satisfiability modulo theories}Can these formulas all be true together?\end{block}
+\begin{frame}{Z3: satisfiability relative to a theory}
+\begin{block}{SMT: satisfiability modulo theories}
+Given a formula $\varphi$ and background theory $T$, is there a model\par
+$\mathcal{M}\models T$ and an assignment $\alpha$ such that $\mathcal{M},\alpha\models\varphi$?
+\end{block}
 \begin{itemize}
-\item Boolean structure plus theories such as integers, bit-vectors, and arrays.
-\item A model supplies values that satisfy the constraints.
-\item A verifier translates program obligations into logical queries.
+\item Boolean combinations of constraints in supported theories.
+\item Examples: integer arithmetic, fixed-width bit-vectors, arrays.
+\item The theory determines the meaning of symbols such as $+$ and $\le$.
 \end{itemize}
-\medskip Z3 reasons about the encoding it receives; it does not infer product intent.
+\medskip For our example: linear constraints over the integers.
 \source{https://microsoft.github.io/z3guide/}{Microsoft's Z3 Guide}
-\note{Use mathematical integers for the teaching query. Fixed-width arithmetic requires explicit range constraints or a bit-vector model; integers alone do not model Rust overflow.}
+\note{No model-theory background is required: read a model as a structure in which all the constraints hold. For the integer example the domain and operations have their standard arithmetic interpretation; the unknowns are values assigned to x and L.}
 \end{frame}
 
 \begin{frame}{Prove a property by searching for its violation}
-\[P \land \text{implementation relation} \land \neg Q\]
+\[\neg\exists s,s':\ P(s)\land C(s,s')\land\neg Q(s').\]
+Ask whether the existential counterexample formula is satisfiable.
 \begin{center}
 \begin{tikzpicture}[node distance=8mm, every node/.style={font=\small},box/.style={draw=Teal,rounded corners,align=center,minimum height=12mm,text width=33mm}]
 \node[box] (p) {Permitted input};
@@ -172,7 +186,7 @@ Deductive verification & Contract holds over modeled inputs & Depends on specifi
 (get-model)
 \end{lstlisting}
 \texttt{sat}: for example, $x=0$, $\mathit{limit}=0$ gives $r=1$.
-\note{This is examples/counter-bug.smt2. The exact model printed by Z3 may differ. The chosen witness is valid regardless of which model the solver chooses.}
+\note{Read prefix notation aloud: (<= x limit) means x <= limit; ite means if-then-else. \texttt{QF\_LIA} selects quantifier-free linear integer arithmetic. Free constants are assigned values in a satisfying model, so the query searches existentially. This is examples/counter-bug.smt2; the exact model may differ.}
 \end{frame}
 
 \begin{frame}[fragile]{Change the branch condition; check again}
@@ -191,18 +205,39 @@ Deductive verification & Contract holds over modeled inputs & Depends on specifi
 \note{The full standalone query is in examples/counter-fixed.smt2. It uses the same input assertions as the previous slide. Verus automates generation of obligations from the source instead of requiring us to manually maintain this encoding.}
 \end{frame}
 
-\begin{frame}{Where automation needs help}
+\begin{frame}{Automation depends on the logical fragment}
 \begin{itemize}
-\item Loops require facts that survive each iteration.
-\item Nonlinear arithmetic and quantified formulas can be difficult.
-\item Helper lemmas and intermediate assertions expose useful reasoning.
+\item Our query uses quantifier-free linear integer arithmetic.
+\item General quantified formulas require more than arithmetic simplification.
+\item Nonlinear arithmetic can also make proof search difficult.
+\item Auxiliary lemmas expose intermediate facts the search needs.
 \end{itemize}
-\begin{block}{An unproved obligation is a diagnosis to investigate}It may indicate a bug, a weak invariant, missing facts, or a solver limitation.\end{block}
+\begin{block}{Failure to prove is not a disproof}
+A countermodel, an inconclusive answer, and a timeout are different outcomes.
+\end{block}
 \source{https://microsoft.github.io/z3guide/docs/logic/Quantifiers/}{Z3 Guide: Quantifiers}
-\note{Avoid equating proof failure with a concrete bug. Break a difficult claim into smaller claims before increasing solver limits. Quantifier instantiation is heuristic in general.}
+\note{A specialist may ask about decidability. Distinguish a decidable fragment from the whole verification language and from practical resource bounds. Do not suggest that SMT is a complete decision procedure for arbitrary mathematical statements. Quantifier instantiation is generally heuristic.}
 \end{frame}
 
 \section{Verus}
+
+\begin{frame}[fragile]{Enough Rust to read the example}
+\begin{lstlisting}
+fn advance(x: u32, limit: u32) -> u32 {
+    if x < limit { x + 1 } else { x }
+}
+\end{lstlisting}
+\begin{itemize}
+\item \texttt{fn}: define a function; \texttt{-> u32}: its output type.
+\item \texttt{u32}: an integer in $\{0,\ldots,2^{32}-1\}$.
+\item \texttt{if ... else ...}: choose an expression; the final expression is returned.
+\end{itemize}
+\begin{block}{Finite arithmetic introduces an obligation}
+To execute \texttt{x + 1} without overflow, prove $x<2^{32}-1$.
+\end{block}
+\note{Rust is a systems programming language with static checks on types and memory use. We need no ownership or lifetime syntax in this talk. Ordinary u32 addition must not be treated as mathematical addition beyond its range: overflow behavior depends on settings, while explicit wrapping arithmetic is a different operation. Verus checks absence of overflow for the addition shown.}
+\end{frame}
+
 \begin{frame}{Verus connects Rust code to proof obligations}
 \begin{center}
 \begin{tikzpicture}[node distance=6mm,box/.style={draw=Teal,rounded corners,align=center,minimum height=15mm,text width=28mm,font=\small}]
@@ -232,9 +267,9 @@ Mode & Purpose & Example \\\midrule
 \end{tabular}
 \vspace{5mm}
 \begin{itemize}
-\item Ordinary functions default to executable mode.
+\item Think: computation, definition, and lemma.
 \item Specifications can use mathematical \texttt{int} and \texttt{nat}.
-\item Ghost reasoning must not affect executable behavior.
+\item Ghost code is reasoning-only code, erased before execution.
 \end{itemize}
 \source{https://verus-lang.github.io/verus/guide/modes.html}{Verus Guide: code modes}
 \note{Machine integers still matter in exec code. Mathematical types let the specification describe arithmetic without silently wrapping. Proof functions can package reusable arguments.}
@@ -270,18 +305,42 @@ fn advance(x: u32, limit: u32) -> (r: u32)
 \note{Keep the specification unchanged during this mutation. At equality the body disagrees with the exact postcondition and breaks the bound; at MAX the body can overflow as well. This is a useful demonstration even when not running live.}
 \end{frame}
 
-\begin{frame}[fragile]{Callers use the contract}
-\begin{lstlisting}
-fn client() {
-    let a = advance(4, 5);
-    assert(a == 5);
-    let b = advance(5, 5);
-    assert(b == 5);
-}
-\end{lstlisting}
-\medskip A call to \texttt{advance(6, 5)} fails its precondition obligation.
-\begin{block}{Compositional reasoning}Verify a function once; reason about its callers through its contract.\end{block}
-\note{Assertions here are verification assertions, not runtime input validation. An application accepting untrusted inputs still needs executable checks before calling a function whose precondition might not hold.}
+\begin{frame}{Using a verified function is applying a lemma}
+Suppose we have established
+\[
+ \forall x,L\in\{0,\ldots,2^{32}-1\},\quad
+ x\le L\ \Longrightarrow\ \operatorname{advance}(x,L)=\min(x+1,L).
+\]
+\begin{itemize}
+\item Instantiate at $(x,L)=(4,5)$ to deduce the result is $5$.
+\item Instantiate at $(x,L)=(5,5)$ to deduce the result is again $5$.
+\item At $(x,L)=(6,5)$, the hypothesis fails; the theorem gives no guarantee.
+\end{itemize}
+\begin{block}{Modular proof}
+Subsequent arguments use the function's contract as a lemma.\par
+They need not repeat the proof about its implementation.
+\end{block}
+\note{The displayed functional equation is justified for this terminating function. General Hoare contracts need the partial-correctness qualification discussed earlier. The corresponding client assertions are retained in examples/counter.rs.}
+\end{frame}
+
+
+\begin{frame}{A loop invariant is an induction hypothesis}
+For \texttt{while} $B$ \texttt{do} $C$, choose a predicate $I$ on states.
+\[
+ \underbrace{P\Rightarrow I}_{\text{base case}},\qquad
+ \underbrace{\{I\land B\}\ C\ \{I\}}_{\text{inductive step}},\qquad
+ \underbrace{I\land\neg B\Rightarrow Q}_{\text{conclusion at exit}}.
+\]
+For repeated bounded successor, take $I(x)\equiv 0\le x\le L$.
+\begin{itemize}
+\item Initially: $0\le x_0\le L$ is assumed.
+\item If $x<L$, then $x'=x+1\le L$; the invariant is preserved.
+\item At exit: $x\le L$ and $\neg(x<L)$ imply $x=L$.
+\end{itemize}
+\begin{block}{Termination uses well-foundedness}
+$V(x)=L-x\in\mathbb{N}$ decreases strictly on every iteration.
+\end{block}
+\note{Induct on the number of completed iterations. The invariant includes the state where the guard is false, so x < L would be too strong. Nonnegativity is implicit for u32 in the upcoming code. A strictly descending sequence in the naturals cannot be infinite; this is the separate termination argument.}
 \end{frame}
 
 \begin{frame}[fragile]{Loops need an invariant}
@@ -305,19 +364,22 @@ fn fill_to_limit(start: u32, limit: u32) -> (r: u32)
 \note{Deliberately simple, not a recommended implementation of assignment. Establish the invariant initially, preserve it after each step, then combine it with the negated guard to get equality. The variant is nonnegative and strictly decreases while the guard holds.}
 \end{frame}
 
-\begin{frame}{Use verification where the boundary is clear}
+\begin{frame}{What is being trusted?}
 \begin{itemize}
-\item Start with a small, consequential function and an explicit contract.
-\item Add invariants and lemmas as the implementation gets richer.
-\item Track trusted code, external specifications, and assumptions.
-\item Keep tests for integration, actual I/O, and performance.
+\item The specification captures the intended theorem.
+\item The translation from code to logical obligations is sound.
+\item The solver's result and any assumed lemmas are correct.
+\item Compilation and execution preserve the verified meaning.
 \end{itemize}
-\begin{block}{Scope the claim precisely}Verified counter arithmetic is evidence about counter arithmetic.\par It is not yet a proof of the surrounding service.\end{block}
-\note{The trust boundary includes the verifier, solver, compilation chain, and any assumed or externally specified behavior. Proof engineering is real work; select components where the property and payoff are clear.}
+\begin{block}{Distinguish proof search from proof checking}
+Here we rely on the Verus/Z3 verification pipeline.\par
+We are not presenting an independently checked proof certificate.
+\end{block}
+\note{This is a natural question for an audience familiar with proof assistants. Explain the trust boundary of this workflow without implying that SMT solvers cannot produce proofs or that other proof systems have no trusted components. Our demonstration runs verification; it does not export a certificate to a separate small kernel.}
 \end{frame}
 
 \section{Verification as LLM Guardrails}
-\begin{frame}{Let the model propose; require checked evidence}
+\begin{frame}{An LLM proposes a construction; verification checks it}
 \begin{center}
 \begin{tikzpicture}[node distance=5mm,box/.style={draw=Teal,rounded corners,align=center,minimum height=17mm,text width=26mm,font=\small}]
 \node[box] (s) {Human-reviewed\\contract};
@@ -331,7 +393,7 @@ fn fill_to_limit(start: u32, limit: u32) -> (r: u32)
 \end{tikzpicture}
 \end{center}
 \vspace{6mm}
-\large The acceptance signal is a verifier result on the submitted artifact.
+\large Plausibility is not a proof: check the generated construction against a fixed claim.
 \note{This is a proposed engineering workflow, not a claim that Verus guarantees all LLM output is safe. LLMs can help draft implementations, invariants, and lemmas; the generated proof text itself is not evidence until checked.}
 \end{frame}
 
@@ -341,21 +403,22 @@ fn fill_to_limit(start: u32, limit: u32) -> (r: u32)
 \item Ask the LLM to implement the function and discharge obligations.
 \item Reject the \texttt{<=} candidate when verification fails.
 \item Revise the body to use \texttt{<}; check the same contract again.
-\item Review the diff and run integration tests before accepting.
+\item Inspect the changed argument and test the surrounding program.
 \end{enumerate}
 \begin{block}{Helpful prompt constraint}``Keep the contract unchanged. Do not introduce assumptions or bypass verification. Explain any remaining obligations.''\end{block}
 \note{A prompt constraint helps communicate intent but is not enforcement. Repository permissions, review, and CI must enforce the acceptance policy independently. Do not let an agent edit the verifier command to make a failed run appear successful.}
 \end{frame}
 
-\begin{frame}{Protect the meaning of a green check}
+\begin{frame}{Do not let a proof attempt change the theorem}
 \begin{itemize}
-\item \textbf{Lock the target:} review contract changes separately from code fixes.
-\item \textbf{Audit escape hatches:} new assumptions or trusted bodies require review.
-\item \textbf{Check coverage:} verify the intended functions and exact revision.
-\item \textbf{Fail closed:} errors, skipped checks, and timeouts are not passes.
-\item \textbf{Preserve evidence:} record tool versions, commands, and results.
+\item \textbf{Weaken the conclusion:} replace $r=\min(x+1,L)$ by $r\le L$.
+\item \textbf{Strengthen the hypotheses:} exclude the failing boundary case.
+\item \textbf{Assume the claim:} introduce an unproved premise that implies it.
 \end{itemize}
-\note{For example, adding assume(false) can make subsequent claims vacuous. A verifier accepting code is useful only if the acceptance path checks the right claim without expanding the trusted surface unnoticed. This slide describes a recommended policy, not a built-in Verus CI feature.}
+\begin{block}{The guardrail must preserve the statement}
+Fix the contract, audit new assumptions, and require all intended obligations to pass.
+\end{block}
+\note{These are familiar mathematical ways to prove something other than the original claim. An LLM repair loop can make the same moves. Review hypothesis changes even when they remain consistent. Tool errors and timeouts must not be counted as successful verification. Preserve the command, tool versions, and exact submitted code.}
 \end{frame}
 
 \begin{frame}{The guardrail has a defined reach}
@@ -373,7 +436,7 @@ fn fill_to_limit(start: u32, limit: u32) -> (r: u32)
 \begin{itemize}
 \item The contract matches user intent.
 \item External systems match the model.
-\item Latency and resource use are acceptable.
+\item The algorithm is efficient enough to use.
 \end{itemize}
 \end{block}
 \end{columns}
@@ -390,8 +453,8 @@ fn fill_to_limit(start: u32, limit: u32) -> (r: u32)
 \item Make verification a required check for LLM-generated changes.
 \end{enumerate}
 \vspace{6mm}
-\Large What invariant in your codebase would you want every change to preserve?
-\note{Invite questions. Suggested discussion: bounds in a parser, monotonic sequence numbers, or a state transition that must preserve an authorization invariant. Each requires its own explicit model.}
+\Large Which theorem about an algorithm would you want its implementation to carry?
+\note{Invite questions. Possible mathematical examples: a sorting routine preserves the input multiset, Euclid steps preserve the gcd, or a numerical method maintains a certified error bound. Each requires a specification and an appropriate model of arithmetic; floating-point analysis requires additional care.}
 \end{frame}
 
 \begin{frame}{References and demo files}

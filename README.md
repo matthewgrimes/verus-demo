@@ -1,6 +1,8 @@
 # Code Verification in Rust with Verus
 
-A 26-slide, widescreen Beamer talk for Rust developers, designed for approximately 30 minutes plus questions. Covers the five requested sections: Introduction; What is code verification; Z3; Verus; Verification as LLM Guardrails.
+A 28-slide, widescreen Beamer talk for a graduate mathematics department, designed for approximately 30–35 minutes plus questions. Assumes comfort with mathematical proofs, quantifiers, and induction; no Rust or formal-methods background is required. Covers the five requested sections: Introduction; What is code verification; Z3; Verus; Verification as LLM Guardrails.
+
+The mathematical thread is: a specification as a theorem, execution as a relation, Hoare triples and substitution, satisfiability relative to a theory, and loop invariants as induction. The final section treats LLM output as a proposed construction whose theorem and hypotheses must remain fixed.
 
 ## Files
 
@@ -21,11 +23,11 @@ make demos    # requires z3 on PATH
 make verify   # requires verus on PATH
 ```
 
-Set the author and date in `presentation.tex` if desired. Notes are hidden in the audience PDF. The title slide has no note page, so the notes edition has 51 pages.
+Set the author and date in `presentation.tex` if desired. Notes are hidden in the audience PDF. The title slide has no note page, so the notes edition has 55 pages.
 
 ## Demo narrative
 
-1. Show the buggy Rust branch (`x <= limit`) and ask what happens at equality.
+1. Define the bounded successor mathematically and exhibit the boundary counterexample. Introduce Rust syntax only in the Verus section.
 2. Run `z3 examples/counter-bug.smt2`: expect `sat` and a boundary witness.
 3. Run `z3 examples/counter-fixed.smt2`: expect `unsat` for a bound violation.
 4. With Verus installed, run `verus examples/counter.rs`.
