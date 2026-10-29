@@ -1,0 +1,409 @@
+\documentclass[aspectratio=169,11pt]{beamer}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{listings}
+\usepackage{booktabs}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning}
+\definecolor{Ink}{HTML}{172B4D}
+\definecolor{Teal}{HTML}{007F86}
+\definecolor{Rust}{HTML}{B64B2B}
+\definecolor{Mist}{HTML}{F1F5F8}
+\setbeamercolor{normal text}{fg=Ink,bg=white}
+\setbeamercolor{structure}{fg=Teal}
+\setbeamercolor{frametitle}{fg=Ink}
+\setbeamercolor{title}{fg=Ink}
+\setbeamercolor{block title}{fg=white,bg=Teal}
+\setbeamercolor{block body}{bg=Mist}
+\setbeamercolor{alerted text}{fg=Rust}
+\setbeamertemplate{navigation symbols}{}
+\setbeamertemplate{itemize items}[circle]
+\setbeamertemplate{footline}{\hspace{6mm}\scriptsize\insertsectionhead\hfill\insertframenumber\,/\,\inserttotalframenumber\hspace{6mm}\vspace{4mm}}
+\setbeamersize{text margin left=9mm,text margin right=9mm}
+\setbeamerfont{frametitle}{size=\Large,series=\bfseries}
+\setbeamerfont{title}{size=\Huge,series=\bfseries}
+\lstdefinelanguage{Verus}{keywords={fn,let,mut,if,else,while,return,use,pub,as,requires,ensures,invariant,decreases,spec,proof,assert,true,false},morecomment=[l]{//},morestring=[b]"}
+\lstset{language=Verus,basicstyle=\ttfamily\small,keywordstyle=\color{Teal}\bfseries,commentstyle=\color{gray},stringstyle=\color{Rust},backgroundcolor=\color{Mist},frame=none,xleftmargin=2mm,xrightmargin=2mm,aboveskip=2mm,belowskip=2mm,showstringspaces=false,columns=fullflexible,keepspaces=true}
+\newcommand{\source}[2]{\vfill{\tiny\color{gray}Source: \href{#1}{#2}}}
+\title{Code Verification in Rust with Verus}
+\subtitle{From intended behavior to machine-checked contracts}
+\author{}
+\date{}
+\begin{document}
+\begin{frame}[plain]
+\vspace{9mm}\titlepage
+\end{frame}
+
+\section{Introduction}
+\begin{frame}{The question behind this talk}
+\Large Can we check that code does what we intended\textemdash before we run it?
+\vspace{7mm}
+\normalsize
+\begin{itemize}\item Rust rules out many memory-safety bugs in safe code.
+\item Tests exercise concrete executions.
+\item Verification checks explicitly stated properties across permitted inputs.
+\end{itemize}
+\begin{block}{Our running example}Advance a counter without ever exceeding its limit.\end{block}
+\note{Audience: developers comfortable reading Rust; no formal-methods background assumed. Aim for about 30 minutes plus questions. Ask the audience what evidence they usually require before trusting a small generated function.}
+\end{frame}
+
+\begin{frame}{The route}
+\tableofcontents
+\note{Timing: introduction 3 minutes; verification 5; Z3 5; Verus 10; LLM guardrails 7. The same counter example connects the sections.}
+\end{frame}
+
+\begin{frame}[fragile]{A small function with a boundary bug}
+\begin{lstlisting}
+fn advance(x: u32, limit: u32) -> u32 {
+    if x <= limit { x + 1 } else { x }
+}
+\end{lstlisting}
+\begin{itemize}
+\item Intended inputs: $0 \le x \le \mathit{limit}$.
+\item At $x=4$, $\mathit{limit}=5$: the result looks right.
+\item At $x=5$, $\mathit{limit}=5$: the result exceeds the limit.
+\item At \texttt{u32::MAX}: the addition also risks overflow.
+\end{itemize}
+\begin{block}{The missing question}What must hold for \emph{every} permitted input?\end{block}
+\note{Do not frame this as a failure of testing: a boundary test catches it immediately. The point is to make the intended behavior explicit and check the whole allowed input domain. Rust's type checker accepts this code. Overflow behavior depends on build settings.}
+\end{frame}
+
+\section{What is code verification}
+\begin{frame}{Turn intent into a contract}
+\begin{columns}[T]
+\column{.48\textwidth}
+\begin{block}{Precondition: caller's obligation}
+$x \le \mathit{limit}$
+\end{block}
+\begin{block}{Postcondition: callee's promise}
+$r \le \mathit{limit}$\par\medskip
+$r=\begin{cases}x+1 & x<\mathit{limit}\\x & x=\mathit{limit}\end{cases}$
+\end{block}
+\column{.48\textwidth}
+\large The contract says both:
+\normalsize\begin{itemize}
+\item what inputs are allowed;
+\item exactly how the result relates to the input.
+\end{itemize}
+\medskip A bound alone is too weak: returning zero would satisfy it.
+\end{columns}
+\note{These equations use mathematical integers. Later, Verus must additionally establish that executable u32 arithmetic is safe. Preconditions restrict the promise; they do not validate external input at runtime.}
+\end{frame}
+
+\begin{frame}{What does a proof establish?}
+\[\{P\}\;C\;\{Q\}\]
+\begin{itemize}
+\item $P$: assumptions about the input and initial state.
+\item $C$: the implementation.
+\item $Q$: the property of the result and final state.
+\end{itemize}
+\begin{block}{Read it as a conditional promise}If $P$ holds and $C$ returns, then $Q$ holds.\end{block}
+\medskip Termination is an additional obligation when claiming total correctness.
+\note{This is partial correctness. Avoid saying that all verified programs terminate automatically. Safety obligations, such as preventing overflow, are additional checks generated by a verifier.}
+\end{frame}
+
+\begin{frame}{Different tools provide different evidence}
+\small
+\begin{tabular}{p{.19\textwidth}p{.34\textwidth}p{.35\textwidth}}
+\toprule
+Tool & Evidence & Boundary \\\midrule
+Rust type checker & Types, ownership, borrowing & Does not establish arbitrary business rules \\\addlinespace
+Tests / fuzzing & Behavior on explored executions & Unexplored inputs remain \\\addlinespace
+Deductive verification & Contract holds over modeled inputs & Depends on specification and trusted assumptions \\\bottomrule
+\end{tabular}
+\vspace{6mm}
+\large Keep all three: each answers a useful question.
+\note{Verification does not replace integration tests, performance measurements, or checking the real deployment environment. Safe Rust's guarantees also depend on the soundness of unsafe implementations underneath it.}
+\end{frame}
+
+\begin{frame}{A proof can be correct and still miss the requirement}
+\begin{itemize}
+\item \textbf{Weak promise:} ``result is within the limit'' permits doing nothing.
+\item \textbf{Impossible premise:} contradictory preconditions make a claim vacuous.
+\item \textbf{Missing model:} a counter proof says nothing about persistence or races.
+\end{itemize}
+\begin{block}{Review the specification as carefully as the implementation}A verifier checks a formal statement. People decide whether it captures the requirement.\end{block}
+\note{Use the counter to make this concrete: a product requirement may include atomic updates across threads. Our pure function models no shared state, so its contract cannot establish that property.}
+\end{frame}
+
+\section{Z3}
+\begin{frame}{Z3 checks logical constraints}
+\begin{block}{SMT: satisfiability modulo theories}Can these formulas all be true together?\end{block}
+\begin{itemize}
+\item Boolean structure plus theories such as integers, bit-vectors, and arrays.
+\item A model supplies values that satisfy the constraints.
+\item A verifier translates program obligations into logical queries.
+\end{itemize}
+\medskip Z3 reasons about the encoding it receives; it does not infer product intent.
+\source{https://microsoft.github.io/z3guide/}{Microsoft's Z3 Guide}
+\note{Use mathematical integers for the teaching query. Fixed-width arithmetic requires explicit range constraints or a bit-vector model; integers alone do not model Rust overflow.}
+\end{frame}
+
+\begin{frame}{Prove a property by searching for its violation}
+\[P \land \text{implementation relation} \land \neg Q\]
+\begin{center}
+\begin{tikzpicture}[node distance=8mm, every node/.style={font=\small},box/.style={draw=Teal,rounded corners,align=center,minimum height=12mm,text width=33mm}]
+\node[box] (p) {Permitted input};
+\node[box,right=of p] (c) {Computed result};
+\node[box,right=of c] (q) {Broken promise};
+\draw[-{Stealth},thick,Teal] (p)--(c);
+\draw[-{Stealth},thick,Teal] (c)--(q);
+\end{tikzpicture}
+\end{center}
+\begin{itemize}
+\item \texttt{sat}: a violation exists in this encoding.
+\item \texttt{unsat}: no such violation exists in this encoding.
+\item \texttt{unknown}: the solver could not decide; no proof obtained.
+\end{itemize}
+\source{https://microsoft.github.io/z3guide/docs/logic/basiccommands/}{Z3 Guide: Basic Commands}
+\note{A timeout also leaves the obligation unproved. With abstractions, a satisfying model may require interpretation before calling it a real program counterexample. Our small exact arithmetic example has a direct interpretation.}
+\end{frame}
+
+\begin{frame}[fragile]{Ask Z3 for the boundary bug}
+\begin{lstlisting}[language={},basicstyle=\ttfamily\small]
+(set-logic QF_LIA)
+(declare-const x Int)
+(declare-const limit Int)
+(assert (and (<= 0 x) (<= x limit)
+             (<= limit 4294967295)))
+(define-fun r () Int (ite (<= x limit) (+ x 1) x))
+(assert (> r limit)) ; violate the bound
+(check-sat)
+(get-model)
+\end{lstlisting}
+\texttt{sat}: for example, $x=0$, $\mathit{limit}=0$ gives $r=1$.
+\note{This is examples/counter-bug.smt2. The exact model printed by Z3 may differ. The chosen witness is valid regardless of which model the solver chooses.}
+\end{frame}
+
+\begin{frame}[fragile]{Change the branch condition; check again}
+\begin{lstlisting}[language={}]
+(define-fun r () Int (ite (< x limit) (+ x 1) x))
+(assert (> r limit))
+(check-sat)
+; unsat
+\end{lstlisting}
+\begin{itemize}
+\item In the increment branch: $x<\mathit{limit}$ implies $x+1\le\mathit{limit}$.
+\item Otherwise: $x\le\mathit{limit}$ implies $x=\mathit{limit}$.
+\item The input bound also gives $r\le 2^{32}-1$.
+\end{itemize}
+\medskip This query proves the bound. A complete contract also fixes the exact result.
+\note{The full standalone query is in examples/counter-fixed.smt2. It uses the same input assertions as the previous slide. Verus automates generation of obligations from the source instead of requiring us to manually maintain this encoding.}
+\end{frame}
+
+\begin{frame}{Where automation needs help}
+\begin{itemize}
+\item Loops require facts that survive each iteration.
+\item Nonlinear arithmetic and quantified formulas can be difficult.
+\item Helper lemmas and intermediate assertions expose useful reasoning.
+\end{itemize}
+\begin{block}{An unproved obligation is a diagnosis to investigate}It may indicate a bug, a weak invariant, missing facts, or a solver limitation.\end{block}
+\source{https://microsoft.github.io/z3guide/docs/logic/Quantifiers/}{Z3 Guide: Quantifiers}
+\note{Avoid equating proof failure with a concrete bug. Break a difficult claim into smaller claims before increasing solver limits. Quantifier instantiation is heuristic in general.}
+\end{frame}
+
+\section{Verus}
+\begin{frame}{Verus connects Rust code to proof obligations}
+\begin{center}
+\begin{tikzpicture}[node distance=6mm,box/.style={draw=Teal,rounded corners,align=center,minimum height=15mm,text width=28mm,font=\small}]
+\node[box] (s) {Rust code\\+ contracts};
+\node[box,right=of s] (v) {Verus\\obligations};
+\node[box,right=of v] (z) {Z3\\checks};
+\draw[-{Stealth},thick,Teal] (s)--(v);
+\draw[-{Stealth},thick,Teal] (v)--(z);
+\end{tikzpicture}
+\end{center}
+\begin{itemize}
+\item Write specifications and proofs alongside executable code.
+\item Verify supported Rust code with annotations and library specifications.
+\item Erase specification/proof code when compiling the executable.
+\end{itemize}
+\source{https://github.com/verus-lang/verus}{Verus project}\source{https://verus-lang.github.io/verus/guide/modes.html}{Verus Guide: code modes}
+\note{Verus supports a subset of Rust; existing crates are not automatically fully verified. The diagram is conceptual, not a complete description of the internal compiler pipeline.}
+\end{frame}
+
+\begin{frame}{Three modes, three jobs}
+\begin{tabular}{p{.17\textwidth}p{.38\textwidth}p{.32\textwidth}}
+\toprule
+Mode & Purpose & Example \\\midrule
+\texttt{exec} & Actual computation & Update a counter \\\addlinespace
+\texttt{spec} & Mathematical definitions & Describe the desired result \\\addlinespace
+\texttt{proof} & Establish logical facts & Supply a lemma or assertion \\\bottomrule
+\end{tabular}
+\vspace{5mm}
+\begin{itemize}
+\item Ordinary functions default to executable mode.
+\item Specifications can use mathematical \texttt{int} and \texttt{nat}.
+\item Ghost reasoning must not affect executable behavior.
+\end{itemize}
+\source{https://verus-lang.github.io/verus/guide/modes.html}{Verus Guide: code modes}
+\note{Machine integers still matter in exec code. Mathematical types let the specification describe arithmetic without silently wrapping. Proof functions can package reusable arguments.}
+\end{frame}
+
+\begin{frame}[fragile]{The counter contract in Verus}
+\begin{lstlisting}
+fn advance(x: u32, limit: u32) -> (r: u32)
+    requires x <= limit,
+    ensures
+        r <= limit,
+        r == (if x < limit { x + 1 } else { x }),
+{
+    if x < limit { x + 1 } else { x }
+}
+\end{lstlisting}
+\begin{itemize}
+\item \texttt{requires}: what callers must establish.
+\item \texttt{ensures}: what callers may rely on afterward.
+\item Verus also checks the executable addition for overflow.
+\end{itemize}
+\source{https://verus-lang.github.io/verus/guide/requires_ensures.html}{Verus Guide: contracts}
+\note{The complete file adds use vstd::prelude::* and a verus! block. In specification expressions, the addition is mathematical. In the executable branch, x < limit and the u32 bound on limit justify x + 1. This is intended to be an automatically discharged example.}
+\end{frame}
+
+\begin{frame}{What must be established?}
+\begin{enumerate}
+\item \textbf{Safe addition:} $x<\mathit{limit}\le\texttt{u32::MAX}$ gives room to increment.
+\item \textbf{Bounded result:} each branch returns at most the limit.
+\item \textbf{Exact behavior:} increment below the limit, stay put at the limit.
+\end{enumerate}
+\begin{block}{Try the original bug}Replace \texttt{x < limit} with \texttt{x <= limit} in the body.\par The same contract should reject the implementation.\end{block}
+\note{Keep the specification unchanged during this mutation. At equality the body disagrees with the exact postcondition and breaks the bound; at MAX the body can overflow as well. This is a useful demonstration even when not running live.}
+\end{frame}
+
+\begin{frame}[fragile]{Callers use the contract}
+\begin{lstlisting}
+fn client() {
+    let a = advance(4, 5);
+    assert(a == 5);
+    let b = advance(5, 5);
+    assert(b == 5);
+}
+\end{lstlisting}
+\medskip A call to \texttt{advance(6, 5)} fails its precondition obligation.
+\begin{block}{Compositional reasoning}Verify a function once; reason about its callers through its contract.\end{block}
+\note{Assertions here are verification assertions, not runtime input validation. An application accepting untrusted inputs still needs executable checks before calling a function whose precondition might not hold.}
+\end{frame}
+
+\begin{frame}[fragile]{Loops need an invariant}
+\begin{lstlisting}[basicstyle=\ttfamily\footnotesize]
+fn fill_to_limit(start: u32, limit: u32) -> (r: u32)
+    requires start <= limit,
+    ensures r == limit,
+{
+    let mut x = start;
+    while x < limit
+        invariant x <= limit,
+        decreases limit - x,
+    {
+        x = advance(x, limit);
+    }
+    x
+}
+\end{lstlisting}
+\small Invariant: we stay within the limit. Variant: the remaining distance shrinks.
+\source{https://verus-lang.github.io/verus/guide/while.html}{Verus Guide: Loops and invariants}
+\note{Deliberately simple, not a recommended implementation of assignment. Establish the invariant initially, preserve it after each step, then combine it with the negated guard to get equality. The variant is nonnegative and strictly decreases while the guard holds.}
+\end{frame}
+
+\begin{frame}{Use verification where the boundary is clear}
+\begin{itemize}
+\item Start with a small, consequential function and an explicit contract.
+\item Add invariants and lemmas as the implementation gets richer.
+\item Track trusted code, external specifications, and assumptions.
+\item Keep tests for integration, actual I/O, and performance.
+\end{itemize}
+\begin{block}{Scope the claim precisely}Verified counter arithmetic is evidence about counter arithmetic.\par It is not yet a proof of the surrounding service.\end{block}
+\note{The trust boundary includes the verifier, solver, compilation chain, and any assumed or externally specified behavior. Proof engineering is real work; select components where the property and payoff are clear.}
+\end{frame}
+
+\section{Verification as LLM Guardrails}
+\begin{frame}{Let the model propose; require checked evidence}
+\begin{center}
+\begin{tikzpicture}[node distance=5mm,box/.style={draw=Teal,rounded corners,align=center,minimum height=17mm,text width=26mm,font=\small}]
+\node[box] (s) {Human-reviewed\\contract};
+\node[box,right=of s] (l) {LLM proposes\\code + proof};
+\node[box,right=of l] (v) {Verus checks\\obligations};
+\node[box,right=of v] (r) {Review\\and tests};
+\draw[-{Stealth},thick,Teal] (s)--(l);
+\draw[-{Stealth},thick,Teal] (l)--(v);
+\draw[-{Stealth},thick,Teal] (v)--(r);
+\draw[-{Stealth},thick,Rust] (v.south) -- ++(0,-.6) -| node[pos=.25,below,font=\scriptsize]{diagnostics / revision} (l.south);
+\end{tikzpicture}
+\end{center}
+\vspace{6mm}
+\large The acceptance signal is a verifier result on the submitted artifact.
+\note{This is a proposed engineering workflow, not a claim that Verus guarantees all LLM output is safe. LLMs can help draft implementations, invariants, and lemmas; the generated proof text itself is not evidence until checked.}
+\end{frame}
+
+\begin{frame}{A concrete revision loop}
+\begin{enumerate}
+\item Freeze the counter contract and allowed input domain.
+\item Ask the LLM to implement the function and discharge obligations.
+\item Reject the \texttt{<=} candidate when verification fails.
+\item Revise the body to use \texttt{<}; check the same contract again.
+\item Review the diff and run integration tests before accepting.
+\end{enumerate}
+\begin{block}{Helpful prompt constraint}``Keep the contract unchanged. Do not introduce assumptions or bypass verification. Explain any remaining obligations.''\end{block}
+\note{A prompt constraint helps communicate intent but is not enforcement. Repository permissions, review, and CI must enforce the acceptance policy independently. Do not let an agent edit the verifier command to make a failed run appear successful.}
+\end{frame}
+
+\begin{frame}{Protect the meaning of a green check}
+\begin{itemize}
+\item \textbf{Lock the target:} review contract changes separately from code fixes.
+\item \textbf{Audit escape hatches:} new assumptions or trusted bodies require review.
+\item \textbf{Check coverage:} verify the intended functions and exact revision.
+\item \textbf{Fail closed:} errors, skipped checks, and timeouts are not passes.
+\item \textbf{Preserve evidence:} record tool versions, commands, and results.
+\end{itemize}
+\note{For example, adding assume(false) can make subsequent claims vacuous. A verifier accepting code is useful only if the acceptance path checks the right claim without expanding the trusted surface unnoticed. This slide describes a recommended policy, not a built-in Verus CI feature.}
+\end{frame}
+
+\begin{frame}{The guardrail has a defined reach}
+\begin{columns}[T]
+\column{.48\textwidth}
+\begin{block}{Can establish, when specified}
+\begin{itemize}
+\item Results satisfy a contract.
+\item Arithmetic stays in range.
+\item A modeled invariant is preserved.
+\end{itemize}
+\end{block}
+\column{.48\textwidth}
+\begin{block}{Still needs separate evidence}
+\begin{itemize}
+\item The contract matches user intent.
+\item External systems match the model.
+\item Latency and resource use are acceptable.
+\end{itemize}
+\end{block}
+\end{columns}
+\vspace{6mm}
+\large Stronger acceptance criteria make generated code easier to evaluate.
+\note{Verification is especially valuable when humans can describe the invariant more reliably than they can inspect every generated implementation. Properties omitted from the contract remain outside the claim.}
+\end{frame}
+
+\begin{frame}{Start with one property worth keeping true}
+\begin{enumerate}
+\item Write the contract before polishing the implementation.
+\item Use Z3's counterexample-search model to understand proof obligations.
+\item Let Verus connect those obligations to Rust code.
+\item Make verification a required check for LLM-generated changes.
+\end{enumerate}
+\vspace{6mm}
+\Large What invariant in your codebase would you want every change to preserve?
+\note{Invite questions. Suggested discussion: bounds in a parser, monotonic sequence numbers, or a state transition that must preserve an authorization invariant. Each requires its own explicit model.}
+\end{frame}
+
+\begin{frame}{References and demo files}
+\small
+\begin{itemize}
+\item \href{https://verus-lang.github.io/verus/guide/}{Verus Tutorial and Reference}\par\scriptsize\url{https://verus-lang.github.io/verus/guide/}\small
+\item \href{https://github.com/verus-lang/verus}{Verus source and installation instructions}\par\scriptsize\url{https://github.com/verus-lang/verus}\small
+\item \href{https://microsoft.github.io/z3guide/}{Microsoft's Z3 Guide}\par\scriptsize\url{https://microsoft.github.io/z3guide/}\small
+\end{itemize}
+\medskip
+Local examples: \texttt{examples/counter.rs},\par
+\texttt{examples/counter-bug.smt2}, \texttt{examples/counter-fixed.smt2}.
+\note{The README documents build commands and validation status. Source links throughout the deck are clickable. Speaker notes live in the TeX source and are hidden in the audience PDF.}
+\end{frame}
+\end{document}
